@@ -20,7 +20,7 @@ The policy implements the following flow:
 * If Phantom Token pattern is implemented, retrieve the JWT for the opaque token.
 * Overwrite the Authorization header with the token and forward requests to the backend services (APIs).
 
-> Note: Due to the limited set of supported classes and methods from the .NET framework in policies, the encryption algorithm used in this example is *AES256-CBC with HMAC*. Make sure to use this implementation together with an OAuth Agent that encrypts the cookies with AES256-CBC with HMAC. Other examples of the Token Handler pattern may use AES256-CBG which provides built-in message integrity.
+> **NOTE**: Due to the limited set of supported classes and methods from the .NET framework in policies, the encryption algorithm used in this example is **AES256-CBC with HMAC**. Make sure to use this implementation together with an OAuth Agent that encrypts the cookies with AES256-CBC with HMAC. Other examples of the Token Handler pattern may use AES256-CBG which provides built-in message integrity.
 
 ## Deploying
 
@@ -31,8 +31,8 @@ command line interfaces, subscriptions...
 ARM template, commands, configuration...
 
 ## Configuration
-|| Name || Display Name || Type || Description ||
----
+| Name | Display Name | Type | Description |
+|------|--------------|------|-------------|
 | oauth-proxy-cookie-name-prefix | OAuthProxy-CookieNamePrefix | Plain/String | The prefix of the cookies that hold the encrypted access and csrf tokens that are handled by the policy. |
 | oauth-proxy-encryption-key | OAuthProxy-EncryptionKey | Base64 encoded encryption key. This key is the master key for decrypting and verifying the integrity of the cookies. |
 | oauth-proxy-trusted-origins | OAuthProxy-TrustedOrigins | Plain/String | A whitelist of at least one web origin from which the plugin will accept requests. Multiple origins are separated by a comma and could be used in special cases where cookies are shared across subdomains. |
