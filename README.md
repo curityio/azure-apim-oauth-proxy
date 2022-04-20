@@ -20,7 +20,7 @@ The policy implements the following flow:
 * If Phantom Token pattern is implemented, retrieve the JWT for the opaque token.
 * Overwrite the Authorization header with the token and forward requests to the backend services (APIs).
 
-> **NOTE**: Due to the limited set of supported classes and methods from the .NET framework in policies, the encryption algorithm used in this example is **AES256-CBC with HMAC**. Make sure to use this implementation together with an OAuth Agent that encrypts the cookies with AES256-CBC with HMAC. Other examples of the Token Handler pattern may use AES256-CBG which provides built-in message integrity.
+> **NOTE**: Due to the limited set of supported classes and methods from the .NET framework in policies, the encryption algorithm used in this example is **AES256-CBC with HMAC-SHA256**. Make sure to use this implementation together with an OAuth Agent that protects the cookies with AES256-CBC and HMAC-SHA256. Other examples of the Token Handler pattern may use AES256-CBG which provides built-in message integrity.
 
 ## Deploying
 
