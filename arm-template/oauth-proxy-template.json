@@ -172,7 +172,7 @@
         ],
         "properties": {
             "displayName": "OAuthProxy-TrustedOrigins",
-            "value": "(String)[parameters('oauth-proxy-trusted-origins')]",
+            "value": "[string(parameters('oauth-proxy-trusted-origins'))]",
             "tags": [],
             "secret": false
         }
