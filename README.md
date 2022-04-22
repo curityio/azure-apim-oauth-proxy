@@ -25,13 +25,28 @@ The policy implements the following flow:
 ## Deploying
 
 ### Prerequisites
-```bash
-az deployment group create --resource-group <name-of-resource-group> --template-file arm-template/oauth-proxy-template.json --name <name-of-the-apim-service> --parameters @arm-template/example-parameters.json --mode incremental
-```
+install azure cli
+sign up for free subscription
 
 command line interfaces, subscriptions...
 
-### Create OAuth Proxy
+## Create the Encryption Key
+This implementation uses AES256-CBC with HMACSHA256. This is due to the limit set of algorithms available in the policy expression language. Both, the encryption with AES256 and the message integrity algorithm require a key. The provided encryption key is split into half to derive two dedicated keys. Consequently, the provided key must be long enough (>=64 bytes) to serve as a master key for both algorithms.
+
+You can use the following command to create an encryption key.
+```bash
+openssl rand 64 | base64
+```
+
+### Create the OAuth Proxy
+The provided template describes an instance of the Azure API Management Service with a global API policy that implements the OAuth Proxy. For demonstration, the policy shows how to combine the OAuth Proxy with the Phantom Token pattern.
+
+Use the Azure command line to deploy the template. Specify the name of the resource group that the APIM service should be created in. Chose a name for the deployment and provide the parameters for configuring the OAuth Proxy. If the resource group contains already resources, make sure to run the deployment in incremental mode to add the service.
+
+```bash
+az deployment group create --resource-group <name-of-resource-group> --template-file arm-template/oauth-proxy-template.json --name <name-of-the-deployment> --parameters @arm-template/example-parameters.json --mode incremental
+```
+
 ARM template, commands, configuration...
 
 ## Configuration
@@ -46,9 +61,6 @@ ARM template, commands, configuration...
 | `clientId` | Plain/String | The client id used by the API Gateway when exchanging an opaque token for a JWT; part of the basic credentials required at the introspection endpoint. |
 | `clientSecret` | Secret/String | The secret used by the API Gateway when exchanging an opaque token for a JWT; part of the basic credentials required at the introspection endpoint. |
 
-## Create encryption key
-
-
 ### Example Parameters
 ```json
 {
@@ -56,7 +68,7 @@ ARM template, commands, configuration...
     "contentVersion": "1.0.0.0",
     "parameters": {
         "apiManagementServiceName": {
-            "value": "test-apim"
+            "value": "testApim"
         },
         "publisherEmail": {
             "value": "developer@example.org"
