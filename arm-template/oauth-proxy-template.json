@@ -87,16 +87,25 @@
         "description": "Whether the Phantom Token pattern is used and the API Gateway should exchange opaque tokens for JWTs"
       }
     },
-    "phantomTokenSettings": {
-      "type": "secureObject",
-      "defaultValue": 
-      {
-          "introspectionUrl": "",
-          "clientId": "",
-          "clientSecret": ""
-       },
+    "introspectionUrl": {
+      "type": "string",
+      "defaultValue": "[if(parameters('usePhantomToken'), null(), '')]",
       "metadata": {
-        "description": "The introspectionUrl, clientId and clientSecret for the Phantom Token pattern"
+        "description": "The url of the introspection endpoint to exchange an opaque token for a JWT"
+      }
+    },
+    "clientId": {
+      "type": "string",
+      "defaultValue": "[if(parameters('usePhantomToken'), null(), '')]",
+      "metadata": {
+        "description": "The client id used by the API Gateway for the Phantom Token pattern"
+      }
+    },
+    "clientSecret": {
+      "type": "securestring",
+      "defaultValue": "[if(parameters('usePhantomToken'), null(), '')]",
+      "metadata": {
+        "description": "The secret used by the API Gateway for the Phantom Token pattern"
       }
     }
   },
@@ -291,19 +300,19 @@
             }
           },
           "introspectionUrl" : {
-            "value": "[parameters('phantomTokenSettings').introspectionUrl]",
+            "value": "[parameters('introspectionUrl')]",
             "metadata": {
               "description": ""
             }
           },
           "clientId": {
-              "value": "[parameters('phantomTokenSettings').clientId]",
+              "value": "[parameters('clientId')]",
               "metadata": {
                 "description": ""
               }
           },
           "clientSecret": {
-              "value": "[parameters('phantomTokenSettings').clientSecret]",
+              "value": "[parameters('clientSecret')]",
               "metadata": {
                 "description": ""
               }
