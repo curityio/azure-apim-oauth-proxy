@@ -12,14 +12,18 @@
                 String authorization = context.Request.Headers.GetValueOrDefault("Authorization", "");
                 return Boolean.Parse("{{OAuthProxy-AllowTokens}}") && authorization.StartsWith("Bearer ");
             }" />
-            <!-- No need for further processing. There's already a token. -->
-            <!-- TODO: What about CSRF? -->
+            <!-- No need for further processing. There is already a token. -->
             <otherwise>
-                <set-variable name="derivedEncryptionKeyB64" value="@{
+                <set-variable name="derivedMasterKeyB64" value="@{
                     String masterKeyB64 = "{{OAuthProxy-EncryptionKey}}";
                     byte[] masterKey = System.Convert.FromBase64String(masterKeyB64);
 
-                    // Derive cipher and auth key from master key
+                    if (masterKey.Length > 64)
+                    {
+                      return masterKeyB64;
+                    }
+
+                    // Expend master key
                     // We assume that the master key is cryptographically strong already to mitigate the risk of dictionary attacks.
                     using (HashAlgorithm hash = SHA512.Create())
                     {
@@ -32,8 +36,7 @@
                     <when condition="@{
                         String originFromHeader = context.Request.Headers.GetValueOrDefault("Origin");
                         String configuredTrustedOrigins = "{{OAuthProxy-TrustedOrigins}}";
-                        List<string> trustedOrigins = new List<string>(configuredTrustedOrigins.Split(','));
-
+                        List<string> trustedOrigins = configuredTrustedOrigins.Split(new char[]{',','[',']').Where(s => !String.IsNullOrEmpty(s)).Select(s => s.Trim()).ToList();
                         trustedOrigins.RemoveAll((s) => string.IsNullOrEmpty(s));
                         return trustedOrigins.Count == 0 || trustedOrigins.Contains(originFromHeader);
                     }" />
@@ -162,7 +165,7 @@
                                 byte[] authKey = new byte[keySizeInBytes];
 
                                 // Derive auth key from master key
-                                string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedEncryptionKeyB64");
+                                string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedMasterKeyB64");
                                 byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);
 
                                 Array.Copy(derivedKey, derivedKey.Length - keySizeInBytes, authKey, 0, keySizeInBytes);
@@ -213,7 +216,7 @@
 
                             byte[] cipherKey = new byte[keySizeInBytes];
 
-                            string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedEncryptionKeyB64");
+                            string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedMasterKeyB64");
                             byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);
 
                             Array.Copy(derivedKey, 0, cipherKey, 0, keySizeInBytes);
@@ -354,7 +357,7 @@
                         byte[] authKey = new byte[keySizeInBytes];
 
                         // Derive auth key from master key
-                        string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedEncryptionKeyB64");
+                        string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedMasterKeyB64");
                         byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);
 
                         Array.Copy(derivedKey, derivedKey.Length - keySizeInBytes, authKey, 0, keySizeInBytes);
@@ -406,7 +409,7 @@
 
                     byte[] cipherKey = new byte[keySizeInBytes];
 
-                    string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedEncryptionKeyB64");
+                    string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedMasterKeyB64");
                     byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);
 
                     Array.Copy(derivedKey, 0, cipherKey, 0, keySizeInBytes);
