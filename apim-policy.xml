@@ -1,5 +1,4 @@
 <policies>
-  <!-- TODO: Provide more detailed error message for 401? -->
     <inbound>
         <set-variable name="version_size" value="@{ return 1; }" />
         <set-variable name="tag_size" value="@{ return 32; }" />
