@@ -18,16 +18,16 @@ The policy implements the following flow:
 
 * Check and set CORS headers
 * Verify Origin header
-* Check CSRF token and cookie for data-changing data-changing methods
 * If enabled, simply forward access tokens found in the Authorization header.
-* Check for valid access token cookie in all other cases
+* Check CSRF token and cookie for data-changing data-changing methods
+* Check for valid access token cookie in all cases
 * Encrypt the access token from the cookie
 * If Phantom Token pattern is implemented, retrieve the JWT for the opaque token.
 * Overwrite the Authorization header with the token and forward requests to the backend services (APIs).
 
 > **NOTE**: Due to the limited set of supported classes and methods from the .NET framework in policies, the encryption algorithm used in this example is **AES256-CBC with HMAC-SHA256**. Make sure to use this implementation together with an OAuth Agent that protects the cookies with AES256-CBC and HMAC-SHA256. Other examples of the Token Handler pattern may use AES256-CBG which provides built-in message integrity.
 
-This repository includes an ARM template and parameter file for quickly enabling an API Management Service as an OAuth Proxy. The template creates an APIM instance with a policy attached that handles all the functions of an OAuth Proxy. Modify the parameters to adapt the deployment.
+This repository includes an ARM template with the policy and parameter file for quickly setting up an API Management Service as an OAuth Proxy. The template creates an APIM instance with a set of named values and a global policy attached that handles all the functions of an OAuth Proxy. Modify the template parameters to adapt the deployment or change the named values afterwards.
 
 ## Development
 Install [Visual Studio Code](https://code.visualstudio.com/) and the extension [Azure Resource Manager (ARM) Tools](https://marketplace.visualstudio.com/items?itemName=msazurermtools.azurerm-vscode-tools&ssr=false). Open the folder `arm-template` in Visual Studio Code and start editing `oauth-proxy-template.json` or `example-parameters.json`. Refer to [Microsoft's documentation for ARM templates](https://docs.microsoft.com/en-us/azure/azure-resource-manager/templates/).
@@ -77,7 +77,7 @@ The template contains inner templates for the policy. Copy, reuse and adapt thos
 
 ## Configuration
 | Name | Type | Description |
-|------|--------------|------|-------------|
+|------|------|-------------|
 | `cookieNamePrefix` |  Plain/String | The prefix of the cookies that hold the encrypted access and csrf tokens that are handled by the policy. |
 | `encryptionKey` | Secret/String | Base64 encoded encryption key. This key is the master key for decrypting and verifying the integrity of the cookies. |
 | `trustedOrigins` | Plain/Array | A whitelist of at least one web origin from which the OAuth Proxy will accept requests. Multiple origins are separated by a comma and could be used in special cases where cookies are shared across subdomains. Use `[]` for an empty list.|
