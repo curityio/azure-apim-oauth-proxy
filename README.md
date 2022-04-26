@@ -68,7 +68,7 @@ ARM template, commands, configuration...
     "contentVersion": "1.0.0.0",
     "parameters": {
         "apiManagementServiceName": {
-            "value": "testApim"
+            "value": "oauthProxyApim"
         },
         "publisherEmail": {
             "value": "developer@example.org"

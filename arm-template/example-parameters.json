@@ -15,13 +15,13 @@
             "value": true
         },
         "encryptionKey": {
-            "value": "key"
+            "value": "JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A="
         },
         "cookieNamePrefix": {
             "value": "oauth-proxy"
         },
         "trustedOrigins": {
-            "value": ["http://app.demo.org", "http://app.demo.org:80"]
+            "value": [ "http://app.demo.org", "http://app.demo.org:80" ]
         },
         "usePhantomToken": {
             "value": true
