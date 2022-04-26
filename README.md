@@ -16,7 +16,6 @@ The Token Handler pattern consists of two components:
 The OAuth Proxy translates tokens from encrypted cookies in inbound requests, so that APIs receive JWTs in the standard way.
 The policy implements the following flow:
 
-* Check and set CORS headers
 * Verify Origin header
 * If enabled, simply forward access tokens found in the Authorization header.
 * Check CSRF token and cookie for data-changing data-changing methods
@@ -129,5 +128,3 @@ The template contains inner templates for the policy. Copy, reuse and adapt thos
     }
 }
 ```
-
-TODO: CORS headers; add during deployment?
