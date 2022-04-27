@@ -81,10 +81,10 @@ The template contains inner templates for the policy. Copy, reuse and adapt thos
 | `apiManagementServiceName` | String | The name of the API Management Service instance that will be created by the template. |
 | `publisherEmail` | String | The email of the owner of the API Management Service. Azure sends for example a notification email to this address when the deployment is complete. |
 | `publisherName` | String | The name of the owner of the API Management service.  |
+| `allowTokens` | Boolean | If set to true, then requests that already have a bearer token are passed straight through to APIs. This can be useful when web and mobile clients share the same API routes. |
+| `trustedOrigins` | Array | A whitelist of at least one web origin from which the OAuth Proxy will accept requests. Multiple origins are separated by a comma and could be used in special cases where cookies are shared across subdomains. Use `[]` for an empty list.|
 | `cookieNamePrefix` | Plain/String | The prefix of the cookies that hold the encrypted access and csrf tokens that are handled by the policy. |
 | `encryptionKey` | Secret String | Base64 encoded encryption key. This key is the master key for decrypting and verifying the integrity of the cookies. |
-| `trustedOrigins` | Array | A whitelist of at least one web origin from which the OAuth Proxy will accept requests. Multiple origins are separated by a comma and could be used in special cases where cookies are shared across subdomains. Use `[]` for an empty list.|
-| `allowTokens` | Boolean | If set to true, then requests that already have a bearer token are passed straight through to APIs. This can be useful when web and mobile clients share the same API routes. |
 | `usePhantomToken` | Boolean | Set to true, if the Phantom Token pattern is used and the API Gateway should exchange opaque tokens for JWTs. |
 | `introspectionUrl` | String | The URL of the introspection endpoint at the Identity Server that the API Gateway will call as part of the Phantom Token pattern to retrieve a JWT.
 | `clientId` | String | The client id used by the API Gateway when exchanging an opaque token for a JWT; part of the basic credentials required at the introspection endpoint. |
@@ -108,14 +108,14 @@ The template contains inner templates for the policy. Copy, reuse and adapt thos
         "allowTokens": {
             "value": true
         },
-        "encryptionKey": {
-            "value": "JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A="
+        "trustedOrigins": {
+            "value": [ "http://app.demo.org", "http://app.demo.org:80"]
         },
         "cookieNamePrefix": {
             "value": "oauth-proxy"
         },
-        "trustedOrigins": {
-            "value": [ "http://app.demo.org", "http://app.demo.org:80"]
+        "encryptionKey": {
+            "value": "JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A="
         },
         "usePhantomToken": {
             "value": true
