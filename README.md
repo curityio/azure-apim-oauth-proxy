@@ -40,7 +40,7 @@ You can use the following command to create an encryption key for testing.
 openssl rand 64 | base64
 ```
 
-Experiment with storing the key in the keyVault.
+Note, that this key is normally shared by the OAuth Agent that generates the encrypted cookies.
 
 ## Deploying
 
@@ -57,7 +57,7 @@ Once installed, log in with your account with the following command:
 az login
 ```
 
-### ARM Template
+### Create Resources
 The provided template describes an instance of the Azure API Management Service with a global API policy that implements the OAuth Proxy. For demonstration, the policy shows how to combine the OAuth Proxy with the Phantom Token pattern.
 
 Use the Azure cli to deploy the template. Specify the name of the resource group that the APIM service should be created in. Provide the parameters for configuring the OAuth Proxy. If the resource group already contains resources, make sure to run the deployment in incremental mode to add the service.
@@ -131,4 +131,35 @@ The template contains inner templates for the policy. Copy, reuse and adapt thos
         }
     }
 }
+```
+
+## Policy
+
+For readability, the policy was added to this repository in its XML format. It uses placeholders, such as `{{OAuthProxy-AllowTokens}}` to access a named value of the API Management Service. Most of the parameters of the template result in a named value that can be accessed within the policy.
+
+This is for example useful when adding support for CORS:
+
+```xml
+<inbound>
+  <cors allow-credentials="true">
+      <allowed-origins>
+          <origin>https://app.demo.org</origin>
+          <origin>https://app.demo.org:80</origin>
+      </allowed-origins>
+      <allowed-methods>
+          <method>OPTIONS</method>
+          <method>GET</method>
+          <method>HEAD</method>
+          <method>POST</method>
+          <method>PUT</method>
+          <method>PATCH</method>
+          <method>DELETE</method>
+      </allowed-methods>
+      <allowed-headers>
+      <!-- allow CSRF header that contains the cookie name prefix -->
+          <header>x-{{OAuthProxy-CookieNamePrefix}}-csrf</header>
+      </allowed-headers>
+  </cors>
+  ...
+</inbound>
 ```
