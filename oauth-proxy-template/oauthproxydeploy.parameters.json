@@ -1,3 +1,4 @@
+```json
 {
     "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
     "contentVersion": "1.0.0.0",
@@ -14,14 +15,14 @@
         "allowTokens": {
             "value": true
         },
-        "encryptionKey": {
-            "value": "JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A="
+        "trustedOrigins": {
+            "value": [ "http://app.demo.org", "http://app.demo.org:80"]
         },
         "cookieNamePrefix": {
             "value": "oauth-proxy"
         },
-        "trustedOrigins": {
-            "value": [ "http://app.demo.org", "http://app.demo.org:80" ]
+        "encryptionKey": {
+            "value": "JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A="
         },
         "usePhantomToken": {
             "value": true

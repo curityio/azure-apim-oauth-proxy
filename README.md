@@ -29,7 +29,7 @@ The policy implements the following flow:
 This repository includes an ARM template with the policy and parameter file for quickly setting up an API Management Service as an OAuth Proxy. The template creates an APIM instance with a set of named values and a global policy attached that handles all the functions of an OAuth Proxy. Modify the template parameters to adapt the deployment or change the named values afterwards.
 
 ## Development
-Install [Visual Studio Code](https://code.visualstudio.com/) and the extension [Azure Resource Manager (ARM) Tools](https://marketplace.visualstudio.com/items?itemName=msazurermtools.azurerm-vscode-tools&ssr=false). Open the folder `arm-template` in Visual Studio Code and start editing `oauth-proxy-template.json` or `example-parameters.json`. Refer to [Microsoft's documentation for ARM templates](https://docs.microsoft.com/en-us/azure/azure-resource-manager/templates/).
+Install [Visual Studio Code](https://code.visualstudio.com/) and the extension [Azure Resource Manager (ARM) Tools](https://marketplace.visualstudio.com/items?itemName=msazurermtools.azurerm-vscode-tools&ssr=false). Open the folder `arm-template` in Visual Studio Code and start editing `oauthproxydeploy.json` or `oauthproxydeploy.parameters.json`. Refer to [Microsoft's documentation for ARM templates](https://docs.microsoft.com/en-us/azure/azure-resource-manager/templates/).
 
 ## Create the Encryption Key
 This implementation uses AES256-CBC with HMACSHA256. This is due to the [limited set of .Net framework types](https://docs.microsoft.com/en-us/azure/api-management/api-management-policy-expressions#CLRTypes) available in the policy expression language. Both, the encryption with AES256 and the message integrity algorithm require a key. The provided encryption key is split into half to derive two dedicated keys. Consequently, the provided key must be long enough (>=64 bytes) to serve as a master key for both algorithms.
@@ -63,28 +63,32 @@ The provided template describes an instance of the Azure API Management Service 
 Use the Azure cli to deploy the template. Specify the name of the resource group that the APIM service should be created in. Provide the parameters for configuring the OAuth Proxy. If the resource group already contains resources, make sure to run the deployment in incremental mode to add the service.
 
 ```
-az deployment group create --resource-group <name-of-resource-group> --template-file arm-template/oauth-proxy-template.json --parameters @arm-template/example-parameters.json --mode incremental
+az deployment group create --resource-group <name-of-resource-group> --template-file oauth-proxy-template/oauthproxydeploy.json --parameters @oauth-proxy-template/oauthproxydeploy.parameters.json --mode incremental
 ```
 
 Use a parameter file or specify the parameters directly in the command:
 
 ```
-az deployment group create --resource-group <name-of-resource-group> --template-file arm-template/oauth-proxy-template.json --parameters apiManagementServiceName='oauthProxyApim' publisherEmail='developer@example.com' publisherName='Dave Loper' allowTokens=true encryptionKey='JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A=' cookieNamePrefix='oauth-proxy' trustedOrigins= '("http://app.demo.org", "http://app.demo.org:80")' usePhantomToken=true introspectionUrl='https://idsvr.example.com' clientId='test-client' clientSecret='Secr3t!'
+az deployment group create --resource-group <name-of-resource-group> --template-file oauth-proxy-template/oauthproxydeploy.json --parameters apiManagementServiceName='oauthProxyApim' publisherEmail='developer@example.com' publisherName='Dave Loper' allowTokens=true encryptionKey='JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A=' cookieNamePrefix='oauth-proxy' trustedOrigins= '("http://app.demo.org", "http://app.demo.org:80")' usePhantomToken=true introspectionUrl='https://idsvr.example.com' clientId='test-client' clientSecret='Secr3t!'
 ```
 
 The template contains inner templates for the policy. Copy, reuse and adapt those templates in other deployments, for example to add the policy to an existing APIM instance.
 
 ## Configuration
+
 | Name | Type | Description |
 |------|------|-------------|
-| `cookieNamePrefix` |  Plain/String | The prefix of the cookies that hold the encrypted access and csrf tokens that are handled by the policy. |
-| `encryptionKey` | Secret/String | Base64 encoded encryption key. This key is the master key for decrypting and verifying the integrity of the cookies. |
-| `trustedOrigins` | Plain/Array | A whitelist of at least one web origin from which the OAuth Proxy will accept requests. Multiple origins are separated by a comma and could be used in special cases where cookies are shared across subdomains. Use `[]` for an empty list.|
-| `allowTokens` | Plain/Boolean | If set to true, then requests that already have a bearer token are passed straight through to APIs. This can be useful when web and mobile clients share the same API routes. |
-| `usePhantomToken` | Plain/Boolean | Set to true, if the Phantom Token pattern is used and the API Gateway should exchange opaque tokens for JWTs. |
-| `introspectionUrl` | Plain/String | The URL of the introspection endpoint at the Identity Server that the API Gateway will call as part of the Phantom Token pattern to retrieve a JWT.
-| `clientId` | Plain/String | The client id used by the API Gateway when exchanging an opaque token for a JWT; part of the basic credentials required at the introspection endpoint. |
-| `clientSecret` | Secret/String | The secret used by the API Gateway when exchanging an opaque token for a JWT; part of the basic credentials required at the introspection endpoint. |
+| `apiManagementServiceName` | String | The name of the API Management Service instance that will be created by the template. |
+| `publisherEmail` | String | The email of the owner of the API Management Service. Azure sends for example a notification email to this address when the deployment is complete. |
+| `publisherName` | String | The name of the owner of the API Management service.  |
+| `cookieNamePrefix` | Plain/String | The prefix of the cookies that hold the encrypted access and csrf tokens that are handled by the policy. |
+| `encryptionKey` | Secret String | Base64 encoded encryption key. This key is the master key for decrypting and verifying the integrity of the cookies. |
+| `trustedOrigins` | Array | A whitelist of at least one web origin from which the OAuth Proxy will accept requests. Multiple origins are separated by a comma and could be used in special cases where cookies are shared across subdomains. Use `[]` for an empty list.|
+| `allowTokens` | Boolean | If set to true, then requests that already have a bearer token are passed straight through to APIs. This can be useful when web and mobile clients share the same API routes. |
+| `usePhantomToken` | Boolean | Set to true, if the Phantom Token pattern is used and the API Gateway should exchange opaque tokens for JWTs. |
+| `introspectionUrl` | String | The URL of the introspection endpoint at the Identity Server that the API Gateway will call as part of the Phantom Token pattern to retrieve a JWT.
+| `clientId` | String | The client id used by the API Gateway when exchanging an opaque token for a JWT; part of the basic credentials required at the introspection endpoint. |
+| `clientSecret` | Secret String | The secret used by the API Gateway when exchanging an opaque token for a JWT; part of the basic credentials required at the introspection endpoint. |
 
 ### Example Parameters
 ```json
