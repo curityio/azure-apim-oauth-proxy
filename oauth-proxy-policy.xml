@@ -22,7 +22,7 @@
                       return masterKeyB64;
                     }
 
-                    // Expend master key
+                    // Expand master key
                     // We assume that the master key is cryptographically strong already to mitigate the risk of dictionary attacks.
                     using (HashAlgorithm hash = SHA512.Create())
                     {
