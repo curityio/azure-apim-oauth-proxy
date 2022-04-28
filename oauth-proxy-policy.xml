@@ -17,7 +17,7 @@
                     String masterKeyB64 = "{{OAuthProxy-EncryptionKey}}";
                     byte[] masterKey = System.Convert.FromBase64String(masterKeyB64);
 
-                    if (masterKey.Length > 64)
+                    if (masterKey.Length >= 64)
                     {
                       return masterKeyB64;
                     }

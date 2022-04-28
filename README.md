@@ -18,9 +18,9 @@ The policy implements the following flow:
 
 * Verify Origin header
 * If enabled, simply forward access tokens found in the Authorization header.
-* Check CSRF token and cookie for data-changing data-changing methods
+* Check CSRF token and cookie for data-changing methods
 * Check for valid access token cookie in all cases
-* Encrypt the access token from the cookie
+* Decrypt the access token from the cookie
 * If Phantom Token pattern is implemented, retrieve the JWT for the opaque token.
 * Overwrite the Authorization header with the token and forward requests to the backend services (APIs).
 
@@ -29,12 +29,12 @@ The policy implements the following flow:
 This repository includes an ARM template with the policy and parameter file for quickly setting up an API Management Service as an OAuth Proxy. The template creates an APIM instance with a set of named values and a global policy attached that handles all the functions of an OAuth Proxy. Modify the template parameters to adapt the deployment or change the named values afterwards.
 
 ## Development
-Install [Visual Studio Code](https://code.visualstudio.com/) and the extension [Azure Resource Manager (ARM) Tools](https://marketplace.visualstudio.com/items?itemName=msazurermtools.azurerm-vscode-tools&ssr=false). Open the folder `arm-template` in Visual Studio Code and start editing `oauthproxydeploy.json` or `oauthproxydeploy.parameters.json`. Refer to [Microsoft's documentation for ARM templates](https://docs.microsoft.com/en-us/azure/azure-resource-manager/templates/).
+Install [Visual Studio Code](https://code.visualstudio.com/) and the extension [Azure Resource Manager (ARM) Tools](https://marketplace.visualstudio.com/items?itemName=msazurermtools.azurerm-vscode-tools&ssr=false). Open the folder `outh-proxy-template` in Visual Studio Code and start editing `oauthproxydeploy.json` or `oauthproxydeploy.parameters.json`. Refer to [Microsoft's documentation for ARM templates](https://docs.microsoft.com/en-us/azure/azure-resource-manager/templates/).
 
 ## Create the Encryption Key
 This implementation uses AES256-CBC with HMACSHA256. This is due to the [limited set of .Net framework types](https://docs.microsoft.com/en-us/azure/api-management/api-management-policy-expressions#CLRTypes) available in the policy expression language. Both, the encryption with AES256 and the message integrity algorithm require a key. The provided encryption key is split into half to derive two dedicated keys. Consequently, the provided key must be long enough (>=64 bytes) to serve as a master key for both algorithms.
 
-You can use the following command to create an encryption key for testing.
+You can use the following command to create an encryption key:
 
 ```bash
 openssl rand 64 | base64
@@ -45,7 +45,7 @@ Note, that this key is normally shared by the OAuth Agent that generates the enc
 ## Deploying
 
 ### Prerequisites
-First, signup and get a valid subscription for [Azure](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli). Then [install Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli). For example, on macOS install the cli with `homebrew`:
+First, signup and get a valid subscription for [Azure](https://azure.microsoft.com/en-us/free). Then [install Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli). For example, on macOS install the cli with `homebrew`:
 
 ```
 brew update && brew install azure-cli
