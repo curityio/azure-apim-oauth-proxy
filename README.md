@@ -32,7 +32,7 @@ This repository includes an ARM template with the policy and parameter file for 
 Install [Visual Studio Code](https://code.visualstudio.com/) and the extension [Azure Resource Manager (ARM) Tools](https://marketplace.visualstudio.com/items?itemName=msazurermtools.azurerm-vscode-tools&ssr=false). Open the folder `outh-proxy-template` in Visual Studio Code and start editing `oauthproxydeploy.json` or `oauthproxydeploy.parameters.json`. Refer to [Microsoft's documentation for ARM templates](https://docs.microsoft.com/en-us/azure/azure-resource-manager/templates/).
 
 ## Create the Encryption Key
-This implementation uses AES256-CBC with HMACSHA256. This is due to the [limited set of .Net framework types](https://docs.microsoft.com/en-us/azure/api-management/api-management-policy-expressions#CLRTypes) available in the policy expression language. Both, the encryption with AES256 and the message integrity algorithm require a key. The provided encryption key is split into half to derive two dedicated keys. Consequently, the provided key must be long enough (>=64 bytes) to serve as a master key for both algorithms.
+This implementation uses AES256-CBC with HMAC-SHA256. This is due to the [limited set of .Net framework types](https://docs.microsoft.com/en-us/azure/api-management/api-management-policy-expressions#CLRTypes) available in the policy expression language. Both, the encryption with AES256 and the message integrity algorithm require a key. The provided encryption key is split into half to derive two dedicated keys. Consequently, the provided key must be long enough (>=64 bytes) to serve as a master key for both algorithms.
 
 You can use the following command to create an encryption key:
 
@@ -45,7 +45,7 @@ Note, that this key is normally shared by the OAuth Agent that generates the enc
 ## Deploying
 
 ### Prerequisites
-First, signup and get a valid subscription for [Azure](https://azure.microsoft.com/en-us/free). Then [install Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli). For example, on macOS install the cli with `homebrew`:
+First, sign up and get a valid subscription for [Azure](https://azure.microsoft.com/en-us/free). Then [install Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli). For example, on macOS install the cli with `homebrew`:
 
 ```
 brew update && brew install azure-cli
