@@ -19,7 +19,7 @@
 
                     if (masterKey.Length >= 64)
                     {
-                      return masterKeyB64;
+                     return masterKeyB64;
                     }
 
                     // Expand master key
@@ -35,15 +35,16 @@
                     <when condition="@{
                         String originFromHeader = context.Request.Headers.GetValueOrDefault("Origin");
                         String configuredTrustedOrigins = "{{OAuthProxy-TrustedOrigins}}";
-                        List<string> trustedOrigins = configuredTrustedOrigins.Split(new char[]{',','[',']').Where(s => !String.IsNullOrEmpty(s)).Select(s => s.Trim()).ToList();
-                        trustedOrigins.RemoveAll((s) => string.IsNullOrEmpty(s));
+                        List<string> trustedOrigins = configuredTrustedOrigins.Split(new char[]{',', '[', ']'}).Where(s => !String.IsNullOrEmpty(s)).Select(s => s.Trim()).ToList();
+                        trustedOrigins.RemoveAll(s => string.IsNullOrEmpty(s));
                         return trustedOrigins.Count == 0 || trustedOrigins.Contains(originFromHeader);
                     }" />
                     <!-- Web origin is trusted. Continue processing. -->
                     <otherwise>
-                        <!-- Abort processing. Deny request. -->
+                        <!-- Web orign not trusted. Abort processing and deny request. -->
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"error":"Web origin of request is not trusted."}</set-body>
                         </return-response>
                     </otherwise>
                 </choose>
@@ -58,7 +59,7 @@
                             string csrfEncryptedCookieValue = null;
                             string csrfTokenCookieName = "{{OAuthProxy-CookieNamePrefix}}-csrf";
                             string cookieHeaderValue = context.Request.Headers.GetValueOrDefault("Cookie","");
-                            string[] cookies = cookieHeaderValue.Split(';');
+                            string[] cookies = cookieHeaderValue.Split(new char[]{';',','});
 
                             foreach (string cookie in cookies) {
                                 if (cookie.Trim().StartsWith(csrfTokenCookieName + "=")) {
@@ -78,6 +79,7 @@
                                 <!-- CSRF token is missing. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"error": "CSRF prevention error", "details": "Missing cookie or header"}</set-body>
                                 </return-response>
                             </when>
                             <otherwise />
@@ -120,6 +122,7 @@
                                 <!-- Version in encrypted CSRF cookie does not match current version. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"error":"CSRF prevention error", "details":"Failed to decrypt cookie"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
@@ -142,6 +145,7 @@
                                 <!-- Ciphertext data is too short. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"error":"CSRF prevention error", "details":"Failed to decrypt cookie"}</set-body>
                                 </return-response>
                             </when>
                         </choose>
@@ -191,6 +195,7 @@
                                 <!-- Message integrity check failed. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"error":"CSRF prevention error","details":"Invalid cookie"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
@@ -240,6 +245,7 @@
                                 <!-- CSRF tokens do not match. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"error": "CSRF prevention error", "details":"Invalid cookie"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
@@ -252,7 +258,7 @@
                     string accessTokenCookieValue = "";
                     string accessTokenCookieName = "{{OAuthProxy-CookieNamePrefix}}-at";
                     string cookieHeaderValue = context.Request.Headers.GetValueOrDefault("Cookie","");
-                    string[] cookies = cookieHeaderValue.Split(';');
+                    string[] cookies = cookieHeaderValue.Split(new char[]{';',','});
 
                     foreach (string cookie in cookies) {
                         if (cookie.Trim().StartsWith(accessTokenCookieName + "=")) {
@@ -273,6 +279,7 @@
                     <when condition="@(String.IsNullOrEmpty(context.Variables.GetValueOrDefault<string>("accessTokenCookieValue")))">
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"error":"Authorization error", "details":"Missing cookie"}</set-body>
                         </return-response>
                     </when>
                     <otherwise />
@@ -312,6 +319,7 @@
                         <!-- Version in encrypted cookie does not match current version. Abort processing. -->
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"error":"Authorization error", "details":"Failed to decrypt cookie"}</set-body>
                         </return-response>
                     </otherwise>
                 </choose>
@@ -334,6 +342,7 @@
                         <!-- Ciphertext data is too short. Abort processing. -->
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"error":"Authorization error", "details":"Failed to decrypt cookie"}</set-body>
                         </return-response>
                     </when>
                 </choose>
@@ -383,6 +392,7 @@
                         <!-- Message integrity check failed. Abort processing. -->
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"error":"Authorization error", "details":"Invalid cookie"}</set-body>
                         </return-response>
                     </otherwise>
                 </choose>
@@ -431,7 +441,7 @@
                     <when condition="@(Boolean.Parse("{{OAuthProxy-UsePhantomToken}}"))">
                         <!-- Send introspection request to exchange by-reference token for a JWT -->
                         <send-request mode="new" response-variable-name="introspectionResponse" timeout="20" ignore-error="true">
-                            <set-url>@("{{OAuthProxy-IntrospectionURL}}")</set-url>
+                            <set-url>@("{{OAuthProxy-IntrospectionUrl}}")</set-url>
                             <set-method>POST</set-method>
                             <set-header name="Authorization" exists-action="override">
                                 <value>@{
@@ -457,13 +467,14 @@
                                 <!-- Token may have expired or other error occured. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"error":"Authorization error", "details":"Invalid access token"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
                     </when>
                     <otherwise />
                 </choose>
-                <set-header name="X-Custom-Header" exists-action="override">
+                <set-header name="Authorization" exists-action="override">
                     <value>@(context.Variables.GetValueOrDefault<String>("accessTokenData", "Default"))</value>
                 </set-header>
             </otherwise>
@@ -476,6 +487,8 @@
     <on-error>
         <return-response>
             <set-status code="401" reason="Unauthorized" />
+            <!-- TODO: Use JObject and context.LastError -->
+            <set-body template="none">{"error": "Unknown"}</set-body>
         </return-response>
     </on-error>
 </policies>
