@@ -72,7 +72,7 @@
                             }
                             return csrfEncryptedCookieValue;
                         }" />
-                        <set-variable name="csrfTokenFromHeader" value="@(context.Request.Headers.GetValueOrDefault("x-{{OAuthProxy-CookieNamePrefix}}-csrf"))" />
+                        <set-variable name="csrfTokenFromHeader" value="@(context.Request.Headers.GetValueOrDefault("X-{{OAuthProxy-CookieNamePrefix}}-csrf"))" />
                         <!-- Check if CSRF token is missing in either cookie or header -->
                         <choose>
                             <when condition="@(context.Variables.GetValueOrDefault("csrfEncryptedCookieValue") == null || context.Variables.GetValueOrDefault("csrfTokenFromHeader") == null)">
