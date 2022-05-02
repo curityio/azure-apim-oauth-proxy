@@ -101,7 +101,7 @@ With the encrypted cookie(s) in place, you can use Azure Portal for testing the 
 1. Send request.
 1. Check trace information in the Trace tab in the HTTP response.
 
-Read Microsoft's tutorial on how to [debug your APIs using request trasing](https://docs.microsoft.com/en-us/azure/api-management/api-management-howto-api-inspector).
+Read Microsoft's tutorial on how to [debug your APIs using request tracing](https://docs.microsoft.com/en-us/azure/api-management/api-management-howto-api-inspector).
 
 
 ## Configuration
