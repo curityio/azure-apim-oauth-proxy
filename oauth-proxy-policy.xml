@@ -1,5 +1,40 @@
 <policies>
     <inbound>
+      <!-- Verify web origin manually -->
+        <choose>
+            <when condition="@{
+                    String originFromHeader = context.Request.Headers.GetValueOrDefault("Origin");
+                    String configuredTrustedOrigins = "{{OAuthProxy-TrustedOrigins}}";
+                    List<string> trustedOrigins = configuredTrustedOrigins.Split(new char[]{',', '[', ']'}).Where(s => !String.IsNullOrEmpty(s)).Select(s => s.Trim()).ToList();
+                    trustedOrigins.RemoveAll(s => string.IsNullOrEmpty(s));
+                    return !String.IsNullOrEmpty(originFromHeader) && trustedOrigins.Contains(originFromHeader);
+                }">
+                <!-- Web origin trusted. Save in variable. -->
+                <set-variable name="trustedOrigin" value="@(context.Request.Headers.GetValueOrDefault("Origin"))" />
+            </when>
+            <otherwise>
+                <!-- Web origin not trusted. Abort processing and deny request. -->
+                <return-response>
+                    <set-status code="401" reason="Unauthorized" />
+                    <set-body template="none">{"error":"Web origin of request is not trusted."}</set-body>
+                </return-response>
+            </otherwise>
+        </choose>
+        <!-- Set CORS headers for trusted origin-->
+        <cors allow-credentials="true">
+            <allowed-origins>
+                <origin>@(context.Variables.GetValueOrDefault<String>("trustedOrigin"))</origin>
+            </allowed-origins>
+            <allowed-methods preflight-result-max-age="86400">
+                <method>*</method>
+            </allowed-methods>
+            <allowed-headers>
+                <header>*</header>
+            </allowed-headers>
+            <expose-headers>
+                <header>*</header>
+            </expose-headers>
+        </cors>
         <set-variable name="version_size" value="@{ return 1; }" />
         <set-variable name="tag_size" value="@{ return 32; }" />
         <set-variable name="key_size" value="@{ return 256; }" />
@@ -30,24 +65,6 @@
                         return System.Convert.ToBase64String(derivedKey);
                     }
                 }" />
-                <choose>
-                    <!-- Verfiy the web origin in line with OWASP CSRF best practices -->
-                    <when condition="@{
-                        String originFromHeader = context.Request.Headers.GetValueOrDefault("Origin");
-                        String configuredTrustedOrigins = "{{OAuthProxy-TrustedOrigins}}";
-                        List<string> trustedOrigins = configuredTrustedOrigins.Split(new char[]{',', '[', ']'}).Where(s => !String.IsNullOrEmpty(s)).Select(s => s.Trim()).ToList();
-                        trustedOrigins.RemoveAll(s => string.IsNullOrEmpty(s));
-                        return trustedOrigins.Count == 0 || trustedOrigins.Contains(originFromHeader);
-                    }" />
-                    <!-- Web origin is trusted. Continue processing. -->
-                    <otherwise>
-                        <!-- Web orign not trusted. Abort processing and deny request. -->
-                        <return-response>
-                            <set-status code="401" reason="Unauthorized" />
-                            <set-body template="none">{"error":"Web origin of request is not trusted."}</set-body>
-                        </return-response>
-                    </otherwise>
-                </choose>
                 <!-- CSRF Protection for manipulative requests, i.e. requests using POST, PUT, DELETE or PATCH. -->
                 <choose>
                     <when condition="@{
