@@ -17,6 +17,7 @@ The OAuth Proxy translates tokens from encrypted cookies in inbound requests, so
 The policy implements the following flow:
 
 * Verify Origin header
+* Add CORS headers
 * If enabled, simply forward access tokens found in the Authorization header.
 * Check CSRF token and cookie for data-changing methods
 * Check for valid access token cookie in all cases
