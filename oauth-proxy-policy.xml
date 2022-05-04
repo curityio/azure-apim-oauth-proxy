@@ -262,7 +262,6 @@
                                 <!-- CSRF tokens do not match. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
-                                    <set-body template="none">{"error": "CSRF prevention error", "details":"Invalid cookie"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
@@ -504,7 +503,6 @@
     <on-error>
         <return-response>
             <set-status code="401" reason="Unauthorized" />
-            <!-- TODO: Use JObject and context.LastError -->
             <set-body template="none">{"error": "Unknown"}</set-body>
         </return-response>
     </on-error>
