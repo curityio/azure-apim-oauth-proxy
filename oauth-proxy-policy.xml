@@ -1,6 +1,6 @@
 <policies>
     <inbound>
-      <!-- Verify web origin manually -->
+        <!-- Verify web origin manually -->
         <choose>
             <when condition="@{
                     String originFromHeader = context.Request.Headers.GetValueOrDefault("Origin");
