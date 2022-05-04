@@ -96,8 +96,8 @@ With the encrypted cookie(s) in place, you can use Azure Portal for testing the 
  1. Selegt the **API operation** to debug.
  1. Add the required headers:
     1. Add `Origin` header and set the value to one of the trusted origins.
-    1. Add access token cookie, e.g. `Cookie: oauth-proxy-at=zzzz` where `zzzz` is the encrypted access token from the OAuth Agent (or the output from the `encrypt` script).
-    1. If testing a data-changing method, add csrf cookie and header, e.g. `Cookie: oauth-proxy-csrf=xxxx` and `X-oauth-proxy-csrf: yyyy` where `xxxx` is the encrypted value of `yyyy`.
+    1. Add access token cookie, e.g. `Cookie: oauth-proxy-at=xxxx` where `xxxx` is the encrypted access token from the OAuth Agent (or the output from the `encrypt` script).
+    1. If testing a data-changing method, add CSRF header and cookie, e.g. `X-oauth-proxy-csrf: yyyy` and `Cookie: oauth-proxy-csrf=zzzz`  where `zzzz` is the encrypted value of `yyyy`.
 
 1. Send request.
 1. Check trace information in the Trace tab in the HTTP response.
@@ -114,7 +114,7 @@ Read Microsoft's tutorial on how to [debug your APIs using request tracing](http
 | `publisherName` | String | The name of the owner of the API Management service.  |
 | `allowTokens` | Boolean | If set to true, then requests that already have a bearer token are passed straight through to APIs. This can be useful when web and mobile clients share the same API routes. |
 | `trustedOrigins` | Array | A whitelist of at least one web origin from which the OAuth Proxy will accept requests (CORS). Multiple origins are separated by a comma and could be used in special cases where cookies are shared across subdomains. |
-| `cookieNamePrefix` | Plain/String | The prefix of the cookies that hold the encrypted access and csrf tokens that are handled by the policy. |
+| `cookieNamePrefix` | Plain/String | The prefix of the cookies that hold the encrypted access and CSRF tokens that are handled by the policy. |
 | `encryptionKey` | Secret String | Base64 encoded encryption key. This key is the master key for decrypting and verifying the integrity of the cookies. |
 | `usePhantomToken` | Boolean | Set to true, if the Phantom Token pattern is used and the API Gateway should exchange opaque tokens for JWTs. |
 | `introspectionUrl` | String | The URL of the introspection endpoint at the Identity Server that the API Gateway will call as part of the Phantom Token pattern to retrieve a JWT.
