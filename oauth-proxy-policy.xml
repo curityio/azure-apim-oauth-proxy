@@ -262,6 +262,7 @@
                                 <!-- CSRF tokens do not match. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"error": "CSRF prevention error", "details":"Invalid cookie"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
