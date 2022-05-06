@@ -47,7 +47,7 @@ Once installed, log in with your account with the following command:
 az login
 ```
 
-Identify the URLs of the OAuth Agent, the OAuth Proxy and client application. OAuth Agent and OAuth Proxy may share a domain, such as `https://api.demo.org` whereas the client application, commonly a Single Page Application, may be deployed at `https://app.demo.org`. Knowing those URLs allows an appropriate configuration from the start.
+Identify the URLs of the OAuth Agent, the OAuth Proxy and client application. OAuth Agent and OAuth Proxy may share a domain, such as `https://api.example.com` whereas the client application, commonly a Single Page Application, may be deployed at `https://app.example.com`. Knowing those URLs allows an appropriate configuration from the start.
 
 ### Create Resources
 The provided template describes an instance of the Azure API Management Service with a global API policy that implements the OAuth Proxy. For demonstration, the policy shows how to combine the OAuth Proxy with the Phantom Token pattern.
@@ -61,7 +61,7 @@ az deployment group create --resource-group <name-of-resource-group> --template-
 Use a parameter file or specify the parameters directly in the command:
 
 ```
-az deployment group create --resource-group <name-of-resource-group> --template-file oauth-proxy-template/oauthproxydeploy.json --parameters apiManagementServiceName='oauthProxyApim' publisherEmail='developer@example.com' publisherName='Dave Loper' allowTokens=true encryptionKey='JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A=' cookieNamePrefix='oauth-proxy' trustedOrigins= '("http://app.demo.org", "http://app.demo.org:80")' usePhantomToken=true introspectionUrl='https://idsvr.example.com' clientId='test-client' clientSecret='Secr3t!'
+az deployment group create --resource-group <name-of-resource-group> --template-file oauth-proxy-template/oauthproxydeploy.json --parameters apiManagementServiceName='oauthProxyApim' publisherEmail='developer@example.com' publisherName='Dave Loper' allowTokens=true encryptionKey='JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A=' cookieNamePrefix='oauth-proxy' trustedOrigins= '("https://app.example.com", "https://app.example.com:443")' usePhantomToken=true introspectionUrl='https://idsvr.example.com' clientId='test-client' clientSecret='Secr3t!'
 ```
 
 The template contains inner templates for the policy. Copy, reuse and adapt those templates in other deployments, for example to add the policy to an existing APIM instance.
@@ -141,13 +141,13 @@ Read Microsoft's tutorial on how to [debug your APIs using request tracing](http
             "value": true
         },
         "trustedOrigins": {
-            "value": [ "http://app.demo.org", "http://app.demo.org:80"]
+            "value": [ "https://app.example.com", "https://app.example.com:443"]
         },
         "cookieNamePrefix": {
             "value": "oauth-proxy"
         },
         "encryptionKey": {
-            "value": "JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A="
+            "value": "hydDIo7hOnUXnAzR3Y00y8r6SvfQG8PToNx9yALkKrhAozdBHAw6w4aLSlWowO5IHR9Q0k6BISHVDWcqwZvL7Q=="
         },
         "usePhantomToken": {
             "value": true
