@@ -168,3 +168,5 @@ Read Microsoft's tutorial on how to [debug your APIs using request tracing](http
 ## Policy
 
 For readability, the policy was added to this repository in its XML format. It uses placeholders, such as `{{OAuthProxy-AllowTokens}}` to access a named value of the API Management Service. Most of the parameters of the template result in a named value that can be accessed within the policy.
+
+The policy supports Cross-Origin Resource Sharing (CORS) to allow cross-domain calls from browser-based clients. The provided CORS snippet from Microsoft takes care of setting the corresponding headers, in particular it returns the appropriate Access-Control headers for preflight requests. Note that the configuration uses wildcards for allowed methods and headers, but the responses contain explicit values. That is according to the specifications which prohibits the use of wildcard values together with `allow-credentials=true`. The policy takes care of the details.

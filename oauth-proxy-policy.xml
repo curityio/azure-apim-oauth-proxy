@@ -16,7 +16,7 @@
                 <!-- Web origin not trusted. Abort processing and deny request. -->
                 <return-response>
                     <set-status code="401" reason="Unauthorized" />
-                    <set-body template="none">{"error":"Web origin of request is not trusted."}</set-body>
+                    <set-body template="none">{"code":"Web origin of request is not trusted."}</set-body>
                 </return-response>
             </otherwise>
         </choose>
@@ -96,7 +96,7 @@
                                 <!-- CSRF token is missing. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
-                                    <set-body template="none">{"error": "CSRF prevention error", "details": "Missing cookie or header"}</set-body>
+                                    <set-body template="none">{"code": "CSRF prevention error", "message": "Missing cookie or header"}</set-body>
                                 </return-response>
                             </when>
                             <otherwise />
@@ -139,7 +139,7 @@
                                 <!-- Version in encrypted CSRF cookie does not match current version. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
-                                    <set-body template="none">{"error":"CSRF prevention error", "details":"Failed to decrypt cookie"}</set-body>
+                                    <set-body template="none">{"code":"CSRF prevention error", "message":"Failed to decrypt cookie"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
@@ -162,7 +162,7 @@
                                 <!-- Ciphertext data is too short. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
-                                    <set-body template="none">{"error":"CSRF prevention error", "details":"Failed to decrypt cookie"}</set-body>
+                                    <set-body template="none">{"code":"CSRF prevention error", "message":"Failed to decrypt cookie"}</set-body>
                                 </return-response>
                             </when>
                         </choose>
@@ -212,7 +212,7 @@
                                 <!-- Message integrity check failed. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
-                                    <set-body template="none">{"error":"CSRF prevention error","details":"Invalid cookie"}</set-body>
+                                    <set-body template="none">{"code":"CSRF prevention error","message":"Invalid cookie"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
@@ -262,7 +262,7 @@
                                 <!-- CSRF tokens do not match. Abort processing. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
-                                    <set-body template="none">{"error": "CSRF prevention error", "details":"Invalid cookie"}</set-body>
+                                    <set-body template="none">{"code": "CSRF prevention error", "message":"Invalid cookie"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
@@ -296,7 +296,7 @@
                     <when condition="@(String.IsNullOrEmpty(context.Variables.GetValueOrDefault<string>("accessTokenCookieValue")))">
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
-                            <set-body template="none">{"error":"Authorization error", "details":"Missing cookie"}</set-body>
+                            <set-body template="none">{"code":"Authorization error", "message":"Missing cookie"}</set-body>
                         </return-response>
                     </when>
                     <otherwise />
@@ -336,7 +336,7 @@
                         <!-- Version in encrypted cookie does not match current version. Abort processing. -->
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
-                            <set-body template="none">{"error":"Authorization error", "details":"Failed to decrypt cookie"}</set-body>
+                            <set-body template="none">{"code":"Authorization error", "message":"Failed to decrypt cookie"}</set-body>
                         </return-response>
                     </otherwise>
                 </choose>
@@ -359,7 +359,7 @@
                         <!-- Ciphertext data is too short. Abort processing. -->
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
-                            <set-body template="none">{"error":"Authorization error", "details":"Failed to decrypt cookie"}</set-body>
+                            <set-body template="none">{"code":"Authorization error", "message":"Failed to decrypt cookie"}</set-body>
                         </return-response>
                     </when>
                 </choose>
@@ -409,7 +409,7 @@
                         <!-- Message integrity check failed. Abort processing. -->
                         <return-response>
                             <set-status code="401" reason="Unauthorized" />
-                            <set-body template="none">{"error":"Authorization error", "details":"Invalid cookie"}</set-body>
+                            <set-body template="none">{"code":"Authorization error", "message":"Invalid cookie"}</set-body>
                         </return-response>
                     </otherwise>
                 </choose>
@@ -484,7 +484,7 @@
                                 <!-- Token may have expired or other error occured. -->
                                 <return-response>
                                     <set-status code="401" reason="Unauthorized" />
-                                    <set-body template="none">{"error":"Authorization error", "details":"Invalid access token"}</set-body>
+                                    <set-body template="none">{"code":"Authorization error", "message":"Invalid access token"}</set-body>
                                 </return-response>
                             </otherwise>
                         </choose>
@@ -504,7 +504,7 @@
     <on-error>
         <return-response>
             <set-status code="401" reason="Unauthorized" />
-            <set-body template="none">{"error": "Unknown"}</set-body>
+            <set-body template="none">{"code": "Unknown"}</set-body>
         </return-response>
     </on-error>
 </policies>
