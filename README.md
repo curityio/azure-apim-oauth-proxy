@@ -61,7 +61,7 @@ az deployment group create --resource-group <name-of-resource-group> --template-
 Use a parameter file or specify the parameters directly in the command:
 
 ```
-az deployment group create --resource-group <name-of-resource-group> --template-file oauth-proxy-template/oauthproxydeploy.json --parameters apiManagementServiceName='oauthProxyApim' publisherEmail='developer@example.com' publisherName='Dave Loper' allowTokens=true encryptionKey='JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A=' cookieNamePrefix='oauth-proxy' trustedOrigins= '("https://app.example.com", "https://app.example.com:443")' usePhantomToken=true introspectionUrl='https://idsvr.example.com' clientId='test-client' clientSecret='Secr3t!'
+az deployment group create --resource-group <name-of-resource-group> --template-file oauth-proxy-template/oauthproxydeploy.json --parameters apiManagementServiceName='oauthProxyApim' publisherEmail='developer@example.com' publisherName='Dave Loper' allowTokens=true encryptionKey='JZukBT6SGAH4ti+ylhw8GJZpiP7k8i+E8WlAanA0q0A=' cookieNamePrefix='oauth-proxy' trustedOrigin= 'https://app.example.com' usePhantomToken=true introspectionUrl='https://idsvr.example.com' clientId='test-client' clientSecret='Secr3t!'
 ```
 
 The template contains inner templates for the policy. Copy, reuse and adapt those templates in other deployments, for example to add the policy to an existing APIM instance.
@@ -114,8 +114,8 @@ Read Microsoft's tutorial on how to [debug your APIs using request tracing](http
 | `publisherEmail` | String | The email of the owner of the API Management Service. Azure sends for example a notification email to this address when the deployment is complete. |
 | `publisherName` | String | The name of the owner of the API Management service.  |
 | `allowTokens` | Boolean | If set to true, then requests that already have a bearer token are passed straight through to APIs. This can be useful when web and mobile clients share the same API routes. |
-| `trustedOrigins` | Array | A whitelist of at least one web origin from which the OAuth Proxy will accept requests (CORS). Multiple origins are separated by a comma and could be used in special cases where cookies are shared across subdomains. |
-| `cookieNamePrefix` | Plain/String | The prefix of the cookies that hold the encrypted access and CSRF tokens that are handled by the policy. |
+| `trustedOrigin` | String | The web origin from which the OAuth Proxy will accept requests (CORS). |
+| `cookieNamePrefix` | String | The prefix of the cookies that hold the encrypted access and CSRF tokens that are handled by the policy. |
 | `encryptionKey` | Secret String | Base64 encoded encryption key. This key is the master key for decrypting and verifying the integrity of the cookies. |
 | `usePhantomToken` | Boolean | Set to true, if the Phantom Token pattern is used and the API Gateway should exchange opaque tokens for JWTs. |
 | `introspectionUrl` | String | The URL of the introspection endpoint at the Identity Server that the API Gateway will call as part of the Phantom Token pattern to retrieve a JWT.
@@ -140,8 +140,8 @@ Read Microsoft's tutorial on how to [debug your APIs using request tracing](http
         "allowTokens": {
             "value": true
         },
-        "trustedOrigins": {
-            "value": [ "https://app.example.com", "https://app.example.com:443"]
+        "trustedOrigin": {
+            "value": "https://app.example.com"
         },
         "cookieNamePrefix": {
             "value": "oauth-proxy"

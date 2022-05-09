@@ -1,29 +1,9 @@
 <policies>
     <inbound>
-        <!-- Verify web origin manually -->
-        <choose>
-            <when condition="@{
-                    String originFromHeader = context.Request.Headers.GetValueOrDefault("Origin");
-                    String configuredTrustedOrigins = "{{OAuthProxy-TrustedOrigins}}";
-                    List<string> trustedOrigins = configuredTrustedOrigins.Split(new char[]{',', '[', ']'}).Where(s => !String.IsNullOrEmpty(s)).Select(s => s.Trim()).ToList();
-                    trustedOrigins.RemoveAll(s => string.IsNullOrEmpty(s));
-                    return !String.IsNullOrEmpty(originFromHeader) && trustedOrigins.Contains(originFromHeader);
-                }">
-                <!-- Web origin trusted. Save in variable. -->
-                <set-variable name="trustedOrigin" value="@(context.Request.Headers.GetValueOrDefault("Origin"))" />
-            </when>
-            <otherwise>
-                <!-- Web origin not trusted. Abort processing and deny request. -->
-                <return-response>
-                    <set-status code="401" reason="Unauthorized" />
-                    <set-body template="none">{"code":"Web origin of request is not trusted."}</set-body>
-                </return-response>
-            </otherwise>
-        </choose>
         <!-- Set CORS headers for trusted origin-->
         <cors allow-credentials="true">
             <allowed-origins>
-                <origin>@(context.Variables.GetValueOrDefault<String>("trustedOrigin"))</origin>
+                <origin>{{OAuthProxy-TrustedOrigin}}</origin>
             </allowed-origins>
             <allowed-methods preflight-result-max-age="86400">
                 <method>*</method>

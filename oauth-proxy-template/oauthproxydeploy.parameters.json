@@ -14,8 +14,8 @@
         "allowTokens": {
             "value": true
         },
-        "trustedOrigins": {
-            "value": [ "https://app.example.com", "https://app.example.com:443"]
+        "trustedOrigin": {
+            "value": "https://app.example.com"
         },
         "cookieNamePrefix": {
             "value": "oauth-proxy"
