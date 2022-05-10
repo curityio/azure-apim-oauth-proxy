@@ -1,0 +1,490 @@
+<policies>
+    <inbound>
+        <!-- Set CORS headers for trusted origin-->
+        <cors allow-credentials="true">
+            <allowed-origins>
+                <origin>{{OAuthProxy-TrustedOrigin}}</origin>
+            </allowed-origins>
+            <allowed-methods preflight-result-max-age="86400">
+                <method>*</method>
+            </allowed-methods>
+            <allowed-headers>
+                <header>*</header>
+            </allowed-headers>
+            <expose-headers>
+                <header>*</header>
+            </expose-headers>
+        </cors>
+        <set-variable name="version_size" value="@{ return 1; }" />
+        <set-variable name="tag_size" value="@{ return 32; }" />
+        <set-variable name="key_size" value="@{ return 256; }" />
+        <set-variable name="key_size_bytes" value="@(context.Variables.GetValueOrDefault<int>("key_size")/8)" />
+        <set-variable name="iv_size" value="@{ return 16; }" />
+        <set-variable name="current_version" value="@{ return 1; }" />
+        <choose>
+            <when condition="@{
+                String authorization = context.Request.Headers.GetValueOrDefault("Authorization", "");
+                return Boolean.Parse("{{OAuthProxy-AllowTokens}}") && authorization.StartsWith("Bearer ");
+            }" />
+            <!-- No need for further processing. There is already a token. -->
+            <otherwise>
+                <set-variable name="derivedMasterKeyB64" value="@{
+                    String masterKeyB64 = "{{OAuthProxy-EncryptionKey}}";
+                    byte[] masterKey = System.Convert.FromBase64String(masterKeyB64);
+
+                    if (masterKey.Length >= 64)
+                    {
+                     return masterKeyB64;
+                    }
+
+                    // Expand master key
+                    // We assume that the master key is cryptographically strong already to mitigate the risk of dictionary attacks.
+                    using (HashAlgorithm hash = SHA512.Create())
+                    {
+                        byte[] derivedKey = hash.ComputeHash(masterKey);
+                        return System.Convert.ToBase64String(derivedKey);
+                    }
+                }" />
+                <!-- CSRF Protection for manipulative requests, i.e. requests using POST, PUT, DELETE or PATCH. -->
+                <choose>
+                    <when condition="@{
+                        List<string> dataChangingMethods = new List<string>() { "POST", "PUT", "DELETE", "PATCH" };
+                        return dataChangingMethods.Contains(context.Request.Method);
+                    }">
+                        <!-- Read csrfToken from cookie -->
+                        <set-variable name="csrfEncryptedCookieValue" value="@{
+                            string csrfEncryptedCookieValue = null;
+                            string csrfTokenCookieName = "{{OAuthProxy-CookieNamePrefix}}-csrf";
+                            string cookieHeaderValue = context.Request.Headers.GetValueOrDefault("Cookie","");
+                            string[] cookies = cookieHeaderValue.Split(new char[]{';',','});
+
+                            foreach (string cookie in cookies) {
+                                if (cookie.Trim().StartsWith(csrfTokenCookieName + "=")) {
+                                    string[] csrfTokenCookie = cookie.Split('=');
+                                    if (csrfTokenCookie.Length == 2) {
+                                        csrfEncryptedCookieValue = csrfTokenCookie[1];
+                                    }
+                                    break;
+                                }
+                            }
+                            return csrfEncryptedCookieValue;
+                        }" />
+                        <set-variable name="csrfTokenFromHeader" value="@(context.Request.Headers.GetValueOrDefault("X-{{OAuthProxy-CookieNamePrefix}}-csrf"))" />
+                        <!-- Check if CSRF token is missing in either cookie or header -->
+                        <choose>
+                            <when condition="@(context.Variables.GetValueOrDefault("csrfEncryptedCookieValue") == null || context.Variables.GetValueOrDefault("csrfTokenFromHeader") == null)">
+                                <!-- CSRF token is missing. Abort processing. -->
+                                <return-response>
+                                    <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"code": "CSRF prevention error", "message": "Missing cookie or header"}</set-body>
+                                </return-response>
+                            </when>
+                            <otherwise />
+                        </choose>
+                        <set-variable name="csrfEncryptedCookieB64Encoded" value="@{
+                            string csrfEncryptedCookieB64UrlEncoded = context.Variables.GetValueOrDefault<string>("csrfEncryptedCookieValue");
+                            string csrfEncryptedCookieB64Encoded = csrfEncryptedCookieB64UrlEncoded.Replace('-','+').Replace('_', '/');
+
+                            int paddings = csrfEncryptedCookieB64UrlEncoded.Length % 4;
+                            if (paddings > 0)
+                            {
+                                csrfEncryptedCookieB64Encoded += new string('=', 4 - paddings);
+                            }
+
+                            return csrfEncryptedCookieB64Encoded;
+                        }" />
+                        <!-- Verify version of encrypted CSRF cookie -->
+                        <choose>
+                            <when condition="@{
+                                string csrfCookieB64Encoded = context.Variables.GetValueOrDefault<String>("csrfEncryptedCookieB64Encoded");
+                                byte[] csrfCookieData = System.Convert.FromBase64String(csrfCookieB64Encoded);
+
+                                int currentVersion = context.Variables.GetValueOrDefault<int>("current_version");
+                                int versionSize = context.Variables.GetValueOrDefault<int>("version_size");
+
+                                byte[] csrfCookieVersionBytes = new byte[4];
+
+                                if (versionSize <= 2 ) {
+                                    Array.Copy(csrfCookieData, 0, csrfCookieVersionBytes, 0, versionSize);
+                                }
+
+                                int csrfCookieVersion = BitConverter.ToInt16(csrfCookieVersionBytes, 0);
+
+                                return currentVersion == csrfCookieVersion;
+
+                            }">
+                                <!-- Versions match. Nothing to do. -->
+                            </when>
+                            <otherwise>
+                                <!-- Version in encrypted CSRF cookie does not match current version. Abort processing. -->
+                                <return-response>
+                                    <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"code":"CSRF prevention error", "message":"Failed to decrypt cookie"}</set-body>
+                                </return-response>
+                            </otherwise>
+                        </choose>
+                        <set-variable name="csrfCookieCipherTextLength" value="@{
+                                string csrfCookieB64Encoded = context.Variables.GetValueOrDefault<String>("csrfEncryptedCookieB64Encoded");
+                                byte[] csrfCookieData = System.Convert.FromBase64String(csrfCookieB64Encoded);
+                                int versionSize = context.Variables.GetValueOrDefault<int>("version_size");
+                                int ivSize = context.Variables.GetValueOrDefault<int>("iv_size");
+                                int tagSize = context.Variables.GetValueOrDefault<int>("tag_size");
+
+                                int cipherTextLength = csrfCookieData.Length - (versionSize + ivSize + tagSize);
+                                return cipherTextLength;
+                            }" />
+                        <!-- Check minimum length of encoded CSRF token -->
+                        <choose>
+                            <when condition="@{
+                                int cipherTextLength = context.Variables.GetValueOrDefault<int>("csrfCookieCipherTextLength");
+                                return (cipherTextLength < 1);
+                            }">
+                                <!-- Ciphertext data is too short. Abort processing. -->
+                                <return-response>
+                                    <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"code":"CSRF prevention error", "message":"Failed to decrypt cookie"}</set-body>
+                                </return-response>
+                            </when>
+                        </choose>
+                        <!-- Verify message integrity for encrypted CSRF cookie -->
+                        <choose>
+                            <when condition="@{
+                                int versionSize = context.Variables.GetValueOrDefault<int>("version_size");
+                                int ivSize = context.Variables.GetValueOrDefault<int>("iv_size");
+                                int cipherTextLength = context.Variables.GetValueOrDefault<int>("csrfCookieCipherTextLength");
+                                int tagSize = context.Variables.GetValueOrDefault<int>("tag_size");
+                                int keySizeInBytes = context.Variables.GetValueOrDefault<int>("key_size_bytes");
+
+                                string csrfCookieB64Encoded = context.Variables.GetValueOrDefault<String>("csrfEncryptedCookieB64Encoded");
+                                byte[] csrfCookieData = System.Convert.FromBase64String(csrfCookieB64Encoded);
+
+                                // Parse ciphertext: VERSION - IV - ENCRYPTED_MESSAGE - TAG
+                                byte[] tag = new byte[tagSize];
+                                Array.Copy(csrfCookieData, versionSize + ivSize + cipherTextLength, tag, 0, tagSize);
+
+                                byte[] authKey = new byte[keySizeInBytes];
+
+                                // Derive auth key from master key
+                                string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedMasterKeyB64");
+                                byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);
+
+                                Array.Copy(derivedKey, derivedKey.Length - keySizeInBytes, authKey, 0, keySizeInBytes);
+
+                                // Compute HMAC from (VERSION - IV - ENCRYPTED_MESSAGE) with authKey  and compare result with tag in cookie
+                                byte[] authenticatedData = new byte[versionSize + ivSize + cipherTextLength];
+                                Array.Copy(csrfCookieData, 0, authenticatedData, 0, authenticatedData.Length);
+
+                                HMAC hmac = new HMACSHA256(authKey);
+                                byte[] computedTag = hmac.ComputeHash(authenticatedData);
+
+                                // Make sure comparison is only dependent on the length and no optimisation is taken that allows time based attacks.
+                                bool areEqual = true;
+                                for (int i = 0; i < computedTag.Length; i++)
+                                {
+                                    areEqual = areEqual && computedTag[i] == tag[i];
+                                }
+
+                                return areEqual;
+                            }">
+                                <!-- Message integrity check successful -->
+                            </when>
+                            <otherwise>
+                                <!-- Message integrity check failed. Abort processing. -->
+                                <return-response>
+                                    <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"code":"CSRF prevention error","message":"Invalid cookie"}</set-body>
+                                </return-response>
+                            </otherwise>
+                        </choose>
+                        <!-- Decrypt CSRF token -->
+                        <set-variable name="csrfTokenData" value="@{
+                            int versionSize = context.Variables.GetValueOrDefault<int>("version_size");
+                            int ivSize = context.Variables.GetValueOrDefault<int>("iv_size");
+                            int cipherTextLength = context.Variables.GetValueOrDefault<int>("csrfCookieCipherTextLength");
+                            int tagSize = context.Variables.GetValueOrDefault<int>("tag_size");
+                            int keySize = context.Variables.GetValueOrDefault<int>("key_size");
+                            int keySizeInBytes = context.Variables.GetValueOrDefault<int>("key_size_bytes");
+
+                            string csrfCookieB64Encoded = context.Variables.GetValueOrDefault<String>("csrfEncryptedCookieB64Encoded");
+                            byte[] csrfCookieData = System.Convert.FromBase64String(csrfCookieB64Encoded);
+
+                            // Parse ciphertext: VERSION - IV - ENCRYPTED_MESSAGE - TAG
+                            byte[] iv = new byte[ivSize];
+                            Array.Copy(csrfCookieData, versionSize, iv, 0, ivSize);
+
+                            byte[] cipherText = new byte[cipherTextLength];
+                            Array.Copy(csrfCookieData, versionSize + ivSize, cipherText, 0, cipherTextLength);
+
+                            byte[] cipherKey = new byte[keySizeInBytes];
+
+                            string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedMasterKeyB64");
+                            byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);
+
+                            Array.Copy(derivedKey, 0, cipherKey, 0, keySizeInBytes);
+
+                            // Decrypt ciphertext using cipherKey, IV
+                            using (SymmetricAlgorithm symmetricAlgorithm = SymmetricAlgorithm.Create("aes"))
+                            {
+                                symmetricAlgorithm.KeySize = keySize;
+                                symmetricAlgorithm.Mode = CipherMode.CBC;
+                                symmetricAlgorithm.Padding = PaddingMode.PKCS7;
+                                symmetricAlgorithm.Key = cipherKey;
+                                symmetricAlgorithm.IV = iv;
+
+                                byte[] plaintext = cipherText.Decrypt(symmetricAlgorithm);
+                                return Encoding.UTF8.GetString(plaintext);
+                            }
+                        }" />
+                        <!-- Check if CSRF token from cookie matches CSRF token from header -->
+                        <choose>
+                            <when condition="@(context.Variables.GetValueOrDefault<string>("csrfTokenData").Equals(context.Variables.GetValueOrDefault<string>("csrfTokenFromHeader")))" />
+                            <otherwise>
+                                <!-- CSRF tokens do not match. Abort processing. -->
+                                <return-response>
+                                    <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"code": "CSRF prevention error", "message":"Invalid cookie"}</set-body>
+                                </return-response>
+                            </otherwise>
+                        </choose>
+                    </when>
+                    <!-- no CSRF Protection necessary -->
+                    <otherwise />
+                </choose>
+                <!-- Get encrypted access token from cookie -->
+                <set-variable name="accessTokenCookieValue" value="@{
+                    string accessTokenCookieValue = "";
+                    string accessTokenCookieName = "{{OAuthProxy-CookieNamePrefix}}-at";
+                    string cookieHeaderValue = context.Request.Headers.GetValueOrDefault("Cookie","");
+                    string[] cookies = cookieHeaderValue.Split(new char[]{';',','});
+
+                    foreach (string cookie in cookies) {
+                        if (cookie.Trim().StartsWith(accessTokenCookieName + "=")) {
+
+                            string[] accessTokenCookie = cookie.Split('=');
+
+                            if (accessTokenCookie.Length == 2) {
+                                accessTokenCookieValue = accessTokenCookie[1];
+                            }
+
+                            break;
+                        }
+                    }
+                    return accessTokenCookieValue;
+                }" />
+                <!-- Quit processing if AT is missing -->
+                <choose>
+                    <when condition="@(String.IsNullOrEmpty(context.Variables.GetValueOrDefault<string>("accessTokenCookieValue")))">
+                        <return-response>
+                            <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"code":"Authorization error", "message":"Missing cookie"}</set-body>
+                        </return-response>
+                    </when>
+                    <otherwise />
+                </choose>
+                <set-variable name="accessTokenCookieB64Encoded" value="@{
+                    string atCookieB64UrlEncoded = context.Variables.GetValueOrDefault<String>("accessTokenCookieValue");
+                    string atCookieB64Encoded = atCookieB64UrlEncoded.Replace('-','+').Replace('_', '/');
+
+                    int paddings = atCookieB64UrlEncoded.Length % 4;
+                    if (paddings > 0)
+                    {
+                        atCookieB64Encoded += new string('=', 4 - paddings);
+                    }
+                    return atCookieB64Encoded;
+                }" />
+                <!-- Verify version of encrypted access token cookie -->
+                <choose>
+                    <when condition="@{
+                        int currentVersion = context.Variables.GetValueOrDefault<int>("current_version");
+                        int versionSize = context.Variables.GetValueOrDefault<int>("version_size");
+
+                        string atCookieB64Encoded = context.Variables.GetValueOrDefault<String>("accessTokenCookieB64Encoded");
+                        byte[] atCookieData = System.Convert.FromBase64String(atCookieB64Encoded);
+
+                        byte[] atCookieVersionBytes = new byte[4];
+
+                        if (versionSize <= 2 ) {
+                            Array.Copy(atCookieData, 0, atCookieVersionBytes, 0, versionSize);
+                        }
+
+                        int atCookieVersion = BitConverter.ToInt16(atCookieVersionBytes, 0);
+                        return currentVersion == atCookieVersion;
+                    }">
+                        <!-- Versions match. Nothing to do. -->
+                    </when>
+                    <otherwise>
+                        <!-- Version in encrypted cookie does not match current version. Abort processing. -->
+                        <return-response>
+                            <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"code":"Authorization error", "message":"Failed to decrypt cookie"}</set-body>
+                        </return-response>
+                    </otherwise>
+                </choose>
+                <set-variable name="atCookieCipherTextLength" value="@{
+                    string atCookieB64Encoded = context.Variables.GetValueOrDefault<String>("accessTokenCookieB64Encoded");
+                    byte[] atCookieData = System.Convert.FromBase64String(atCookieB64Encoded);
+                    int versionSize = context.Variables.GetValueOrDefault<int>("version_size");
+                    int ivSize = context.Variables.GetValueOrDefault<int>("iv_size");
+                    int tagSize = context.Variables.GetValueOrDefault<int>("tag_size");
+
+                    int cipherTextLength = atCookieData.Length - (versionSize + ivSize + tagSize);
+                    return cipherTextLength;
+                }" />
+                <!-- Check minimum length of encoded data in access token cookie -->
+                <choose>
+                    <when condition="@{
+                        int cipherTextLength = context.Variables.GetValueOrDefault<int>("atCookieCipherTextLength");
+                        return (cipherTextLength < 1);
+                    }">
+                        <!-- Ciphertext data is too short. Abort processing. -->
+                        <return-response>
+                            <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"code":"Authorization error", "message":"Failed to decrypt cookie"}</set-body>
+                        </return-response>
+                    </when>
+                </choose>
+                <!-- Validate message integrity of encrypted access token-->
+                <choose>
+                    <when condition="@{
+                        int versionSize = context.Variables.GetValueOrDefault<int>("version_size");
+                        int ivSize = context.Variables.GetValueOrDefault<int>("iv_size");
+                        int cipherTextLength = context.Variables.GetValueOrDefault<int>("atCookieCipherTextLength");
+                        int tagSize = context.Variables.GetValueOrDefault<int>("tag_size");
+                        int keySizeInBytes = context.Variables.GetValueOrDefault<int>("key_size_bytes");
+
+                        string atCookieB64Encoded = context.Variables.GetValueOrDefault<String>("accessTokenCookieB64Encoded");
+                        byte[] atCookieData = System.Convert.FromBase64String(atCookieB64Encoded);
+
+                        // Parse ciphertext: VERSION - IV - ENCRYPTED_MESSAGE - TAG
+                        byte[] tag = new byte[tagSize];
+                        Array.Copy(atCookieData, versionSize + ivSize + cipherTextLength, tag, 0, tagSize);
+
+                        byte[] authKey = new byte[keySizeInBytes];
+
+                        // Derive auth key from master key
+                        string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedMasterKeyB64");
+                        byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);
+
+                        Array.Copy(derivedKey, derivedKey.Length - keySizeInBytes, authKey, 0, keySizeInBytes);
+
+                        // Compute HMAC from (VERSION - IV - ENCRYPTED_MESSAGE) with authKey  and compare result with tag in cookie
+                        byte[] authenticatedData = new byte[versionSize + ivSize + cipherTextLength];
+                        Array.Copy(atCookieData, 0, authenticatedData, 0, authenticatedData.Length);
+
+                        HMAC hmac = new HMACSHA256(authKey);
+                        byte[] computedTag = hmac.ComputeHash(authenticatedData);
+
+                        // Make sure comparison is only dependent on the length and no optimisation is taken that allows time based attacks.
+                        bool areEqual = true;
+                        for (int i = 0; i < computedTag.Length; i++)
+                        {
+                            areEqual = areEqual && computedTag[i] == tag[i];
+                        }
+
+                        return areEqual;
+                    }">
+                        <!-- Message integrity check successful -->
+                    </when>
+                    <otherwise>
+                        <!-- Message integrity check failed. Abort processing. -->
+                        <return-response>
+                            <set-status code="401" reason="Unauthorized" />
+                            <set-body template="none">{"code":"Authorization error", "message":"Invalid cookie"}</set-body>
+                        </return-response>
+                    </otherwise>
+                </choose>
+                <!-- Decrypt Access Token -->
+                <set-variable name="accessTokenData" value="@{
+                    int versionSize = context.Variables.GetValueOrDefault<int>("version_size");
+                    int ivSize = context.Variables.GetValueOrDefault<int>("iv_size");
+                    int cipherTextLength = context.Variables.GetValueOrDefault<int>("atCookieCipherTextLength");
+                    int tagSize = context.Variables.GetValueOrDefault<int>("tag_size");
+                    int keySize = context.Variables.GetValueOrDefault<int>("key_size");
+                    int keySizeInBytes = context.Variables.GetValueOrDefault<int>("key_size_bytes");
+
+                    string atCookieB64Encoded = context.Variables.GetValueOrDefault<String>("accessTokenCookieB64Encoded");
+                    byte[] atCookieData = System.Convert.FromBase64String(atCookieB64Encoded);
+
+                    // Parse ciphertext: VERSION - IV - ENCRYPTED_MESSAGE - TAG
+                    byte[] iv = new byte[ivSize];
+                    Array.Copy(atCookieData, versionSize, iv, 0, ivSize);
+
+                    byte[] cipherText = new byte[cipherTextLength];
+                    Array.Copy(atCookieData, versionSize + ivSize, cipherText, 0, cipherTextLength);
+
+
+                    byte[] cipherKey = new byte[keySizeInBytes];
+
+                    string derivedKeyB64 = context.Variables.GetValueOrDefault<string>("derivedMasterKeyB64");
+                    byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);
+
+                    Array.Copy(derivedKey, 0, cipherKey, 0, keySizeInBytes);
+
+                    // Decrypt ciphertext using cipherKey, IV
+                    using (SymmetricAlgorithm symmetricAlgorithm = SymmetricAlgorithm.Create("aes"))
+                    {
+                        symmetricAlgorithm.KeySize = keySize;
+                        symmetricAlgorithm.Mode = CipherMode.CBC;
+                        symmetricAlgorithm.Padding = PaddingMode.PKCS7;
+                        symmetricAlgorithm.Key = cipherKey;
+                        symmetricAlgorithm.IV = iv;
+
+                        byte[] plaintext = cipherText.Decrypt(symmetricAlgorithm);
+                        return Encoding.UTF8.GetString(plaintext);
+                    }
+                }" />
+                <!-- If access token is a by-reference token exchange it for a by-value token (JWT) ( (phantom token flow) -->
+                <choose>
+                    <when condition="@(Boolean.Parse("{{OAuthProxy-UsePhantomToken}}"))">
+                        <!-- Send introspection request to exchange by-reference token for a JWT -->
+                        <send-request mode="new" response-variable-name="introspectionResponse" timeout="20" ignore-error="true">
+                            <set-url>@("{{OAuthProxy-IntrospectionUrl}}")</set-url>
+                            <set-method>POST</set-method>
+                            <set-header name="Authorization" exists-action="override">
+                                <value>@{
+                                    string credentials = "{{OAuthProxy-ClientId}}:{{OAuthProxy-ClientSecret}}";
+                                    byte[] credentialsBytes = Encoding.UTF8.GetBytes(credentials);
+                                    return "Basic " + System.Convert.ToBase64String(credentialsBytes);
+                                }</value>
+                            </set-header>
+                            <set-header name="Content-Type" exists-action="override">
+                                <value>application/x-www-form-urlencoded</value>
+                            </set-header>
+                            <set-header name="Accept" exists-action="override">
+                                <value>application/jwt</value>
+                            </set-header>
+                            <set-body>@($"token={context.Variables.GetValueOrDefault<string>("accessTokenData")}")</set-body>
+                        </send-request>
+                        <choose>
+                            <!-- Load token from introspection response -->
+                            <when condition="@(context.Variables.GetValueOrDefault<IResponse>("introspectionResponse").StatusCode == 200)">
+                                <set-variable name="accessTokenData" value="@(context.Variables.GetValueOrDefault<IResponse>("introspectionResponse").Body.As<String>())" />
+                            </when>
+                            <otherwise>
+                                <!-- Token may have expired or other error occured. -->
+                                <return-response>
+                                    <set-status code="401" reason="Unauthorized" />
+                                    <set-body template="none">{"code":"Authorization error", "message":"Invalid access token"}</set-body>
+                                </return-response>
+                            </otherwise>
+                        </choose>
+                    </when>
+                    <otherwise />
+                </choose>
+                <set-header name="Authorization" exists-action="override">
+                    <value>@(context.Variables.GetValueOrDefault<String>("accessTokenData", "Default"))</value>
+                </set-header>
+            </otherwise>
+        </choose>
+    </inbound>
+    <backend>
+        <forward-request />
+    </backend>
+    <outbound />
+    <on-error>
+        <return-response>
+            <set-status code="401" reason="Unauthorized" />
+            <set-body template="none">{"code": "Unknown"}</set-body>
+        </return-response>
+    </on-error>
+</policies>

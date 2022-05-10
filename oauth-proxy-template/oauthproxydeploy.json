@@ -1,0 +1,399 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "apiManagementServiceName": {
+      "type": "string",
+      "defaultValue": "[format('apiservice{0}', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "The name of the API Management service instance"
+      }
+    },
+    "publisherEmail": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "The email address of the owner of the service"
+      }
+    },
+    "publisherName": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "The name of the owner of the service"
+      }
+    },
+    "sku": {
+      "type": "string",
+      "defaultValue": "Developer",
+      "allowedValues": [
+        "Developer",
+        "Standard",
+        "Premium"
+      ],
+      "metadata": {
+        "description": "The pricing tier of this API Management service"
+      }
+    },
+    "skuCount": {
+      "type": "int",
+      "defaultValue": 1,
+      "allowedValues": [
+        1,
+        2
+      ],
+      "metadata": {
+        "description": "The instance size of this API Management service."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for all resources."
+      }
+    },
+    "cookieNamePrefix": {
+      "type": "string",
+      "defaultValue": "oauth-proxy",
+      "metadata" : {
+        "description": "The prefix of the cookies that hold the encrypted access and csrf tokens that are handled by the policy for the OAuth Proxy"
+      }
+    },
+    "encryptionKey": {
+      "type": "securestring",
+      "metadata": {
+          "description": "Base64 encoded encryption key"
+      }
+    },
+    "allowTokens": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "If set to true, then the OAuth Proxy will just pass requests that already have a bearer token to the backend."
+      }
+    },
+    "trustedOrigin" : {
+      "type": "string",
+      "metadata": {
+        "description": "The web origin from which the OAuth Proxy will accept requests"
+      }
+    },
+    "usePhantomToken": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Whether the Phantom Token pattern is used and the API Gateway should exchange opaque tokens for JWTs"
+      }
+    },
+    "introspectionUrl": {
+      "type": "string",
+      "defaultValue": "[if(parameters('usePhantomToken'), null(), '')]",
+      "metadata": {
+        "description": "The url of the introspection endpoint to exchange an opaque token for a JWT"
+      }
+    },
+    "clientId": {
+      "type": "string",
+      "defaultValue": "[if(parameters('usePhantomToken'), null(), '')]",
+      "metadata": {
+        "description": "The client id used by the API Gateway for the Phantom Token pattern"
+      }
+    },
+    "clientSecret": {
+      "type": "securestring",
+      "defaultValue": "[if(parameters('usePhantomToken'), null(), '')]",
+      "metadata": {
+        "description": "The secret used by the API Gateway for the Phantom Token pattern"
+      }
+    }
+  },
+  "variables" : {
+    "corsPolicySnippet": "<!-- Set CORS headers for trusted origin-->\r\n    <cors allow-credentials=\"true\">\r\n      <allowed-origins>\r\n        <origin>{{OAuthProxy-TrustedOrigin}}</origin>\r\n      </allowed-origins>\r\n      <allowed-methods preflight-result-max-age=\"86400\">\r\n        <method>*</method>\r\n      </allowed-methods>\r\n      <allowed-headers>\r\n        <header>*</header>\r\n      </allowed-headers>\r\n      <expose-headers>\r\n        <header>*</header>\r\n      </expose-headers>\r\n    </cors>\r\n",
+    "setConstantsPolicySnippet": "<set-variable name=\"version_size\" value=\"@{ return 1; }\" />\r\n    <set-variable name=\"tag_size\" value=\"@{ return 32; }\" />\r\n    <set-variable name=\"key_size\" value=\"@{ return 256; }\" />\r\n    <set-variable name=\"key_size_bytes\" value=\"@(context.Variables.GetValueOrDefault&lt;int&gt;(&quot;key_size&quot;)/8)\" />\r\n    <set-variable name=\"iv_size\" value=\"@{ return 16; }\" />\r\n    <set-variable name=\"current_version\" value=\"@{ return 1; }\" />\r\n",
+    "deriveKeyPolicySnippet": "<set-variable name=\"derivedMasterKeyB64\" value=\"@{&#xA;                    String masterKeyB64 = &quot;{{OAuthProxy-EncryptionKey}}&quot;;&#xA;                    byte[] masterKey = System.Convert.FromBase64String(masterKeyB64);&#xA;&#xA;                    if (masterKey.Length &gt;= 64)&#xA;                    {&#xA;                     return masterKeyB64;&#xA;                    }&#xA;&#xA;                    // Expand master key&#xA;                    // We assume that the master key is cryptographically strong already to mitigate the risk of dictionary attacks.&#xA;                    using (HashAlgorithm hash = SHA512.Create())&#xA;                    {&#xA;                        byte[] derivedKey = hash.ComputeHash(masterKey);&#xA;                        return System.Convert.ToBase64String(derivedKey);&#xA;                    }&#xA;                }\" />\r\n",
+    "csrfTokenVerificationPolicySnippet": "<!-- CSRF Protection for manipulative requests, i.e. requests using POST, PUT, DELETE or PATCH. -->\r\n        <choose>\r\n          <when condition=\"@{&#xA;                        List&lt;string&gt; dataChangingMethods = new List&lt;string&gt;() { &quot;POST&quot;, &quot;PUT&quot;, &quot;DELETE&quot;, &quot;PATCH&quot; };&#xA;                        return dataChangingMethods.Contains(context.Request.Method);&#xA;                    }\">\r\n            <!-- Read csrfToken from cookie -->\r\n            <set-variable name=\"csrfEncryptedCookieValue\" value=\"@{&#xA;                            string csrfEncryptedCookieValue = null;&#xA;                            string csrfTokenCookieName = &quot;{{OAuthProxy-CookieNamePrefix}}-csrf&quot;;&#xA;                            string cookieHeaderValue = context.Request.Headers.GetValueOrDefault(&quot;Cookie&quot;,&quot;&quot;);&#xA;                            string[] cookies = cookieHeaderValue.Split(new char[]{';',','});&#xA;&#xA;                            foreach (string cookie in cookies) {&#xA;                                if (cookie.Trim().StartsWith(csrfTokenCookieName + &quot;=&quot;)) {&#xA;                                    string[] csrfTokenCookie = cookie.Split('=');&#xA;                                    if (csrfTokenCookie.Length == 2) {&#xA;                                        csrfEncryptedCookieValue = csrfTokenCookie[1];&#xA;                                    }&#xA;                                    break;&#xA;                                }&#xA;                            }&#xA;                            return csrfEncryptedCookieValue;&#xA;                        }\" />\r\n            <set-variable name=\"csrfTokenFromHeader\" value=\"@(context.Request.Headers.GetValueOrDefault(&quot;X-{{OAuthProxy-CookieNamePrefix}}-csrf&quot;))\" />\r\n            <!-- Check if CSRF token is missing in either cookie or header -->\r\n            <choose>\r\n              <when condition=\"@(context.Variables.GetValueOrDefault(&quot;csrfEncryptedCookieValue&quot;) == null || context.Variables.GetValueOrDefault(&quot;csrfTokenFromHeader&quot;) == null)\">\r\n                <!-- CSRF token is missing. Abort processing. -->\r\n                <return-response>\r\n                  <set-status code=\"401\" reason=\"Unauthorized\" />\r\n                  <set-body template=\"none\">{\"code\": \"CSRF prevention error\", \"message\": \"Missing cookie or header\"}</set-body>\r\n                </return-response>\r\n              </when>\r\n              <otherwise />\r\n            </choose>\r\n            <set-variable name=\"csrfEncryptedCookieB64Encoded\" value=\"@{&#xA;                            string csrfEncryptedCookieB64UrlEncoded = context.Variables.GetValueOrDefault&lt;string&gt;(&quot;csrfEncryptedCookieValue&quot;);&#xA;                            string csrfEncryptedCookieB64Encoded = csrfEncryptedCookieB64UrlEncoded.Replace('-','+').Replace('_', '/');&#xA;&#xA;                            int paddings = csrfEncryptedCookieB64UrlEncoded.Length % 4;&#xA;                            if (paddings &gt; 0)&#xA;                            {&#xA;                                csrfEncryptedCookieB64Encoded += new string('=', 4 - paddings);&#xA;                            }&#xA;&#xA;                            return csrfEncryptedCookieB64Encoded;&#xA;                        }\" />\r\n            <!-- Verify version of encrypted CSRF cookie -->\r\n            <choose>\r\n              <when condition=\"@{&#xA;                                string csrfCookieB64Encoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;csrfEncryptedCookieB64Encoded&quot;);&#xA;                                byte[] csrfCookieData = System.Convert.FromBase64String(csrfCookieB64Encoded);&#xA;&#xA;                                int currentVersion = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;current_version&quot;);&#xA;                                int versionSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;version_size&quot;);&#xA;&#xA;                                byte[] csrfCookieVersionBytes = new byte[4];&#xA;&#xA;                                if (versionSize &lt;= 2 ) {&#xA;                                    Array.Copy(csrfCookieData, 0, csrfCookieVersionBytes, 0, versionSize);&#xA;                                }&#xA;&#xA;                                int csrfCookieVersion = BitConverter.ToInt16(csrfCookieVersionBytes, 0);&#xA;&#xA;                                return currentVersion == csrfCookieVersion;&#xA;&#xA;                            }\">\r\n                <!-- Versions match. Nothing to do. -->\r\n              </when>\r\n              <otherwise>\r\n                <!-- Version in encrypted CSRF cookie does not match current version. Abort processing. -->\r\n                <return-response>\r\n                  <set-status code=\"401\" reason=\"Unauthorized\" />\r\n                  <set-body template=\"none\">{\"code\":\"CSRF prevention error\", \"message\":\"Failed to decrypt cookie\"}</set-body>\r\n                </return-response>\r\n              </otherwise>\r\n            </choose>\r\n            <set-variable name=\"csrfCookieCipherTextLength\" value=\"@{&#xA;                                string csrfCookieB64Encoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;csrfEncryptedCookieB64Encoded&quot;);&#xA;                                byte[] csrfCookieData = System.Convert.FromBase64String(csrfCookieB64Encoded);&#xA;                                int versionSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;version_size&quot;);&#xA;                                int ivSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;iv_size&quot;);&#xA;                                int tagSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;tag_size&quot;);&#xA;&#xA;                                int cipherTextLength = csrfCookieData.Length - (versionSize + ivSize + tagSize);&#xA;                                return cipherTextLength;&#xA;                            }\" />\r\n            <!-- Check minimum length of encoded CSRF token -->\r\n            <choose>\r\n              <when condition=\"@{&#xA;                                int cipherTextLength = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;csrfCookieCipherTextLength&quot;);&#xA;                                return (cipherTextLength &lt; 1);&#xA;                            }\">\r\n                <!-- Ciphertext data is too short. Abort processing. -->\r\n                <return-response>\r\n                  <set-status code=\"401\" reason=\"Unauthorized\" />\r\n                  <set-body template=\"none\">{\"code\":\"CSRF prevention error\", \"message\":\"Failed to decrypt cookie\"}</set-body>\r\n                </return-response>\r\n              </when>\r\n            </choose>\r\n            <!-- Verify message integrity for encrypted CSRF cookie -->\r\n            <choose>\r\n              <when condition=\"@{&#xA;                                int versionSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;version_size&quot;);&#xA;                                int ivSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;iv_size&quot;);&#xA;                                int cipherTextLength = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;csrfCookieCipherTextLength&quot;);&#xA;                                int tagSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;tag_size&quot;);&#xA;                                int keySizeInBytes = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;key_size_bytes&quot;);&#xA;&#xA;                                string csrfCookieB64Encoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;csrfEncryptedCookieB64Encoded&quot;);&#xA;                                byte[] csrfCookieData = System.Convert.FromBase64String(csrfCookieB64Encoded);&#xA;&#xA;                                // Parse ciphertext: VERSION - IV - ENCRYPTED_MESSAGE - TAG&#xA;                                byte[] tag = new byte[tagSize];&#xA;                                Array.Copy(csrfCookieData, versionSize + ivSize + cipherTextLength, tag, 0, tagSize);&#xA;&#xA;                                byte[] authKey = new byte[keySizeInBytes];&#xA;&#xA;                                // Derive auth key from master key&#xA;                                string derivedKeyB64 = context.Variables.GetValueOrDefault&lt;string&gt;(&quot;derivedMasterKeyB64&quot;);&#xA;                                byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);&#xA;&#xA;                                Array.Copy(derivedKey, derivedKey.Length - keySizeInBytes, authKey, 0, keySizeInBytes);&#xA;&#xA;                                // Compute HMAC from (VERSION - IV - ENCRYPTED_MESSAGE) with authKey  and compare result with tag in cookie&#xA;                                byte[] authenticatedData = new byte[versionSize + ivSize + cipherTextLength];&#xA;                                Array.Copy(csrfCookieData, 0, authenticatedData, 0, authenticatedData.Length);&#xA;&#xA;                                HMAC hmac = new HMACSHA256(authKey);&#xA;                                byte[] computedTag = hmac.ComputeHash(authenticatedData);&#xA;&#xA;                                // Make sure comparison is only dependent on the length and no optimisation is taken that allows time based attacks.&#xA;                                bool areEqual = true;&#xA;                                for (int i = 0; i &lt; computedTag.Length; i++)&#xA;                                {&#xA;                                    areEqual = areEqual &amp;&amp; computedTag[i] == tag[i];&#xA;                                }&#xA;&#xA;                                return areEqual;&#xA;                            }\">\r\n                <!-- Message integrity check successful -->\r\n              </when>\r\n              <otherwise>\r\n                <!-- Message integrity check failed. Abort processing. -->\r\n                <return-response>\r\n                  <set-status code=\"401\" reason=\"Unauthorized\" />\r\n                  <set-body template=\"none\">{\"code\":\"CSRF prevention error\",\"message\":\"Invalid cookie\"}</set-body>\r\n                </return-response>\r\n              </otherwise>\r\n            </choose>\r\n            <!-- Decrypt CSRF token -->\r\n            <set-variable name=\"csrfTokenData\" value=\"@{&#xA;                            int versionSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;version_size&quot;);&#xA;                            int ivSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;iv_size&quot;);&#xA;                            int cipherTextLength = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;csrfCookieCipherTextLength&quot;);&#xA;                            int tagSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;tag_size&quot;);&#xA;                            int keySize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;key_size&quot;);&#xA;                            int keySizeInBytes = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;key_size_bytes&quot;);&#xA;&#xA;                            string csrfCookieB64Encoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;csrfEncryptedCookieB64Encoded&quot;);&#xA;                            byte[] csrfCookieData = System.Convert.FromBase64String(csrfCookieB64Encoded);&#xA;&#xA;                            // Parse ciphertext: VERSION - IV - ENCRYPTED_MESSAGE - TAG&#xA;                            byte[] iv = new byte[ivSize];&#xA;                            Array.Copy(csrfCookieData, versionSize, iv, 0, ivSize);&#xA;&#xA;                            byte[] cipherText = new byte[cipherTextLength];&#xA;                            Array.Copy(csrfCookieData, versionSize + ivSize, cipherText, 0, cipherTextLength);&#xA;                            &#xA;                            byte[] cipherKey = new byte[keySizeInBytes];&#xA;&#xA;                            string derivedKeyB64 = context.Variables.GetValueOrDefault&lt;string&gt;(&quot;derivedMasterKeyB64&quot;);&#xA;                            byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);&#xA;&#xA;                            Array.Copy(derivedKey, 0, cipherKey, 0, keySizeInBytes);&#xA;&#xA;                            // Decrypt ciphertext using cipherKey, IV&#xA;                            using (SymmetricAlgorithm symmetricAlgorithm = SymmetricAlgorithm.Create(&quot;aes&quot;))&#xA;                            {&#xA;                                symmetricAlgorithm.KeySize = keySize;&#xA;                                symmetricAlgorithm.Mode = CipherMode.CBC;&#xA;                                symmetricAlgorithm.Padding = PaddingMode.PKCS7;&#xA;                                symmetricAlgorithm.Key = cipherKey;&#xA;                                symmetricAlgorithm.IV = iv;&#xA;&#xA;                                byte[] plaintext = cipherText.Decrypt(symmetricAlgorithm);&#xA;                                return Encoding.UTF8.GetString(plaintext);&#xA;                            }&#xA;                        }\" />\r\n            <!-- Check if CSRF token from cookie matches CSRF token from header -->\r\n            <choose>\r\n              <when condition=\"@(context.Variables.GetValueOrDefault&lt;string&gt;(&quot;csrfTokenData&quot;).Equals(context.Variables.GetValueOrDefault&lt;string&gt;(&quot;csrfTokenFromHeader&quot;)))\" />\r\n              <otherwise>\r\n                <!-- CSRF tokens do not match. Abort processing. -->\r\n                <return-response>\r\n                  <set-status code=\"401\" reason=\"Unauthorized\" />\r\n                  <set-body template=\"none\">{\"code\": \"CSRF prevention error\", \"message\":\"Invalid cookie\"}</set-body>\r\n                </return-response>\r\n              </otherwise>\r\n            </choose>\r\n          </when>\r\n          <!-- no CSRF Protection necessary -->\r\n          <otherwise />\r\n        </choose>\r\n",
+    "accessTokenDecryptionPolicySnippet": "<!-- Get encrypted access token from cookie -->\r\n        <set-variable name=\"accessTokenCookieValue\" value=\"@{&#xA;                    string accessTokenCookieValue = &quot;&quot;;&#xA;                    string accessTokenCookieName = &quot;{{OAuthProxy-CookieNamePrefix}}-at&quot;;&#xA;                    string cookieHeaderValue = context.Request.Headers.GetValueOrDefault(&quot;Cookie&quot;,&quot;&quot;);&#xA;                    string[] cookies = cookieHeaderValue.Split(new char[]{';',','});&#xA;&#xA;                    foreach (string cookie in cookies) {&#xA;                        if (cookie.Trim().StartsWith(accessTokenCookieName + &quot;=&quot;)) {&#xA;&#xA;                            string[] accessTokenCookie = cookie.Split('=');&#xA;&#xA;                            if (accessTokenCookie.Length == 2) {&#xA;                                accessTokenCookieValue = accessTokenCookie[1];&#xA;                            }&#xA;&#xA;                            break;&#xA;                        }&#xA;                    }&#xA;                    return accessTokenCookieValue;&#xA;                }\" />\r\n        <!-- Quit processing if AT is missing -->\r\n        <choose>\r\n          <when condition=\"@(String.IsNullOrEmpty(context.Variables.GetValueOrDefault&lt;string&gt;(&quot;accessTokenCookieValue&quot;)))\">\r\n            <return-response>\r\n              <set-status code=\"401\" reason=\"Unauthorized\" />\r\n              <set-body template=\"none\">{\"code\":\"Authorization error\", \"message\":\"Missing cookie\"}</set-body>            </return-response>\r\n          </when>\r\n          <otherwise />\r\n        </choose>\r\n        <set-variable name=\"accessTokenCookieB64Encoded\" value=\"@{&#xA;                    string atCookieB64UrlEncoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;accessTokenCookieValue&quot;);&#xA;                    string atCookieB64Encoded = atCookieB64UrlEncoded.Replace('-','+').Replace('_', '/');&#xA;&#xA;                    int paddings = atCookieB64UrlEncoded.Length % 4;&#xA;                    if (paddings &gt; 0)&#xA;                    {&#xA;                        atCookieB64Encoded += new string('=', 4 - paddings);&#xA;                    }&#xA;                    return atCookieB64Encoded;&#xA;                }\" />\r\n        <!-- Verify version of encrypted access token cookie -->\r\n        <choose>\r\n          <when condition=\"@{&#xA;                        int currentVersion = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;current_version&quot;);&#xA;                        int versionSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;version_size&quot;);&#xA;&#xA;                        string atCookieB64Encoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;accessTokenCookieB64Encoded&quot;);&#xA;                        byte[] atCookieData = System.Convert.FromBase64String(atCookieB64Encoded);&#xA;&#xA;                        byte[] atCookieVersionBytes = new byte[4];&#xA;&#xA;                        if (versionSize &lt;= 2 ) {&#xA;                            Array.Copy(atCookieData, 0, atCookieVersionBytes, 0, versionSize);&#xA;                        }&#xA;&#xA;                        int atCookieVersion = BitConverter.ToInt16(atCookieVersionBytes, 0);&#xA;                        return currentVersion == atCookieVersion;&#xA;                    }\">\r\n            <!-- Versions match. Nothing to do. -->\r\n          </when>\r\n          <otherwise>\r\n            <!-- Version in encrypted cookie does not match current version. Abort processing. -->\r\n            <return-response>\r\n              <set-status code=\"401\" reason=\"Unauthorized\" />\r\n              <set-body template=\"none\">{\"code\":\"Authorization error\", \"message\":\"Failed to decrypt cookie\"}</set-body>\r\n            </return-response>\r\n          </otherwise>\r\n        </choose>\r\n        <set-variable name=\"atCookieCipherTextLength\" value=\"@{&#xA;                    string atCookieB64Encoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;accessTokenCookieB64Encoded&quot;);&#xA;                    byte[] atCookieData = System.Convert.FromBase64String(atCookieB64Encoded);&#xA;                    int versionSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;version_size&quot;);&#xA;                    int ivSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;iv_size&quot;);&#xA;                    int tagSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;tag_size&quot;);&#xA;&#xA;                    int cipherTextLength = atCookieData.Length - (versionSize + ivSize + tagSize);&#xA;                    return cipherTextLength;&#xA;                }\" />\r\n        <!-- Check minimum length of encoded data in access token cookie -->\r\n        <choose>\r\n          <when condition=\"@{&#xA;                        int cipherTextLength = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;atCookieCipherTextLength&quot;);&#xA;                        return (cipherTextLength &lt; 1);&#xA;                    }\">\r\n            <!-- Ciphertext data is too short. Abort processing. -->\r\n            <return-response>\r\n              <set-status code=\"401\" reason=\"Unauthorized\" />\r\n              <set-body template=\"none\">{\"code\":\"Authorization error\", \"message\":\"Failed to decrypt cookie\"}</set-body>\r\n            </return-response>\r\n          </when>\r\n        </choose>\r\n        <!-- Validate message integrity of encrypted access token-->\r\n        <choose>\r\n          <when condition=\"@{&#xA;                        int versionSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;version_size&quot;);&#xA;                        int ivSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;iv_size&quot;);&#xA;                        int cipherTextLength = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;atCookieCipherTextLength&quot;);&#xA;                        int tagSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;tag_size&quot;);&#xA;                        int keySizeInBytes = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;key_size_bytes&quot;);&#xA;&#xA;                        string atCookieB64Encoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;accessTokenCookieB64Encoded&quot;);&#xA;                        byte[] atCookieData = System.Convert.FromBase64String(atCookieB64Encoded);&#xA;&#xA;                        // Parse ciphertext: VERSION - IV - ENCRYPTED_MESSAGE - TAG&#xA;                        byte[] tag = new byte[tagSize];&#xA;                        Array.Copy(atCookieData, versionSize + ivSize + cipherTextLength, tag, 0, tagSize);&#xA;&#xA;                        byte[] authKey = new byte[keySizeInBytes];&#xA;&#xA;                        // Derive auth key from master key&#xA;                        string derivedKeyB64 = context.Variables.GetValueOrDefault&lt;string&gt;(&quot;derivedMasterKeyB64&quot;);&#xA;                        byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);&#xA;&#xA;                        Array.Copy(derivedKey, derivedKey.Length - keySizeInBytes, authKey, 0, keySizeInBytes);&#xA;&#xA;                        // Compute HMAC from (VERSION - IV - ENCRYPTED_MESSAGE) with authKey  and compare result with tag in cookie&#xA;                        byte[] authenticatedData = new byte[versionSize + ivSize + cipherTextLength];&#xA;                        Array.Copy(atCookieData, 0, authenticatedData, 0, authenticatedData.Length);&#xA;&#xA;                        HMAC hmac = new HMACSHA256(authKey);&#xA;                        byte[] computedTag = hmac.ComputeHash(authenticatedData);&#xA;&#xA;                        // Make sure comparison is only dependent on the length and no optimisation is taken that allows time based attacks.&#xA;                        bool areEqual = true;&#xA;                        for (int i = 0; i &lt; computedTag.Length; i++)&#xA;                        {&#xA;                            areEqual = areEqual &amp;&amp; computedTag[i] == tag[i];&#xA;                        }&#xA;&#xA;                        return areEqual;&#xA;                    }\">\r\n            <!-- Message integrity check successful -->\r\n          </when>\r\n          <otherwise>\r\n            <!-- Message integrity check failed. Abort processing. -->\r\n            <return-response>\r\n              <set-status code=\"401\" reason=\"Unauthorized\" />\r\n              <set-body template=\"none\">{\"code\":\"Authorization error\", \"message\":\"Invalid cookie\"}</set-body>\r\n            </return-response>\r\n          </otherwise>\r\n        </choose>\r\n        <!-- Decrypt Access Token -->\r\n        <set-variable name=\"accessTokenData\" value=\"@{&#xA;                    int versionSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;version_size&quot;);&#xA;                    int ivSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;iv_size&quot;);&#xA;                    int cipherTextLength = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;atCookieCipherTextLength&quot;);&#xA;                    int tagSize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;tag_size&quot;);&#xA;                    int keySize = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;key_size&quot;);&#xA;                    int keySizeInBytes = context.Variables.GetValueOrDefault&lt;int&gt;(&quot;key_size_bytes&quot;);&#xA;&#xA;                    string atCookieB64Encoded = context.Variables.GetValueOrDefault&lt;String&gt;(&quot;accessTokenCookieB64Encoded&quot;);&#xA;                    byte[] atCookieData = System.Convert.FromBase64String(atCookieB64Encoded);&#xA;&#xA;                    // Parse ciphertext: VERSION - IV - ENCRYPTED_MESSAGE - TAG&#xA;                    byte[] iv = new byte[ivSize];&#xA;                    Array.Copy(atCookieData, versionSize, iv, 0, ivSize);&#xA;&#xA;                    byte[] cipherText = new byte[cipherTextLength];&#xA;                    Array.Copy(atCookieData, versionSize + ivSize, cipherText, 0, cipherTextLength);&#xA;&#xA;&#xA;                    byte[] cipherKey = new byte[keySizeInBytes];&#xA;&#xA;                    string derivedKeyB64 = context.Variables.GetValueOrDefault&lt;string&gt;(&quot;derivedMasterKeyB64&quot;);&#xA;                    byte[] derivedKey = System.Convert.FromBase64String(derivedKeyB64);&#xA;&#xA;                    Array.Copy(derivedKey, 0, cipherKey, 0, keySizeInBytes);&#xA;&#xA;                    // Decrypt ciphertext using cipherKey, IV&#xA;                    using (SymmetricAlgorithm symmetricAlgorithm = SymmetricAlgorithm.Create(&quot;aes&quot;))&#xA;                    {&#xA;                        symmetricAlgorithm.KeySize = keySize;&#xA;                        symmetricAlgorithm.Mode = CipherMode.CBC;&#xA;                        symmetricAlgorithm.Padding = PaddingMode.PKCS7;&#xA;                        symmetricAlgorithm.Key = cipherKey;&#xA;                        symmetricAlgorithm.IV = iv;&#xA;&#xA;                        byte[] plaintext = cipherText.Decrypt(symmetricAlgorithm);&#xA;                        return Encoding.UTF8.GetString(plaintext);&#xA;                    }&#xA;                }\" />\r\n",
+    "introspectionPolicySnippet": "<!-- If access token is a by-reference token exchange it for a by-value token (JWT) ( (phantom token flow) -->\r\n        <choose>\r\n          <when condition=\"@(Boolean.Parse(&quot;{{OAuthProxy-UsePhantomToken}}&quot;))\">\r\n            <!-- Send introspection request to exchange by-reference token for a JWT -->\r\n            <send-request mode=\"new\" response-variable-name=\"introspectionResponse\" timeout=\"20\" ignore-error=\"true\">\r\n              <set-url>@(\"{{OAuthProxy-IntrospectionURL}}\")</set-url>\r\n              <set-method>POST</set-method>\r\n              <set-header name=\"Authorization\" exists-action=\"override\">\r\n                <value>@{\r\n                                    string credentials = \"{{OAuthProxy-ClientId}}:{{OAuthProxy-ClientSecret}}\";\r\n                                    byte[] credentialsBytes = Encoding.UTF8.GetBytes(credentials);\r\n                                    return \"Basic \" + System.Convert.ToBase64String(credentialsBytes);\r\n                                }</value>\r\n              </set-header>\r\n              <set-header name=\"Content-Type\" exists-action=\"override\">\r\n                <value>application/x-www-form-urlencoded</value>\r\n              </set-header>\r\n              <set-header name=\"Accept\" exists-action=\"override\">\r\n                <value>application/jwt</value>\r\n              </set-header>\r\n              <set-body>@($\"token={context.Variables.GetValueOrDefault&lt;string&gt;(\"accessTokenData\")}\")</set-body>\r\n            </send-request>\r\n            <choose>\r\n              <!-- Load token from introspection response -->\r\n              <when condition=\"@(context.Variables.GetValueOrDefault&lt;IResponse&gt;(&quot;introspectionResponse&quot;).StatusCode == 200)\">\r\n                <set-variable name=\"accessTokenData\" value=\"@(context.Variables.GetValueOrDefault&lt;IResponse&gt;(&quot;introspectionResponse&quot;).Body.As&lt;String&gt;())\" />\r\n              </when>\r\n              <otherwise>\r\n                <!-- Token may have expired or other error occured. -->\r\n                <return-response>\r\n                  <set-status code=\"401\" reason=\"Unauthorized\" />\r\n                  <set-body template=\"none\">{\"code\":\"Authorization error\", \"message\":\"Invalid access token\"}</set-body>\r\n                </return-response>\r\n              </otherwise>\r\n            </choose>\r\n          </when>\r\n          <otherwise />\r\n        </choose>\r\n",
+    "allowTokensConditionExpression": "@{&#xA;                String authorization = context.Request.Headers.GetValueOrDefault(&quot;Authorization&quot;, &quot;&quot;); &#xA;                return Boolean.Parse(&quot;{{OAuthProxy-AllowTokens}}&quot;) &amp;&amp; authorization.StartsWith(&quot;Bearer &quot;);&#xA;            }",
+    "setAuthorizationHeaderPolicySnippet": "<set-header name=\"Authorization\" exists-action=\"override\">\r\n          <value>@(context.Variables.GetValueOrDefault&lt;String&gt;(\"accessTokenData\", \"Default\"))</value>\r\n        </set-header>\r\n",
+    "onErrorPolicySnippet": "<on-error>\r\n    <return-response>\r\n      <set-status code=\"401\" reason=\"Unauthorized\" />\r\n      <set-body template=\"none\">{\"code\": \"Unknown\"}</set-body>\r\n    </return-response>\r\n  </on-error>\r\n",
+    "commonPolicyFormat": "<policies>\r\n  <inbound>\r\n    {0}    {1}    <choose>\r\n      <when condition=\"{2}\" />\r\n      <!-- No need for further processing. There is already a token. -->\r\n      <otherwise>\r\n        {3}        {4}        {5}        {6}        {7}      </otherwise>\r\n    </choose>\r\n  </inbound>\r\n  <backend>\r\n    <forward-request />\r\n  </backend>\r\n  <outbound />\r\n  {8}</policies>",
+    "oauthProxyPhantomTokenPolicy": "[format(variables('commonPolicyFormat'), variables('corsPolicySnippet'), variables('setConstantsPolicySnippet'), variables('allowTokensConditionExpression'), variables('deriveKeyPolicySnippet'), variables('csrfTokenVerificationPolicySnippet'), variables('accessTokenDecryptionPolicySnippet'), variables('introspectionPolicySnippet'), variables('setAuthorizationHeaderPolicySnippet'), variables('onErrorPolicySnippet'))]",
+    "oauthProxyPolicy": "[format(variables('commonPolicyFormat'), variables('corsPolicySnippet'), variables('setConstantsPolicySnippet'), variables('allowTokensConditionExpression'), variables('deriveKeyPolicySnippet'), variables('csrfTokenVerificationPolicySnippet'), variables('accessTokenDecryptionPolicySnippet'), '', variables('setAuthorizationHeaderPolicySnippet'), variables('onErrorPolicySnippet'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ApiManagement/service",
+      "apiVersion": "2021-08-01",
+      "name": "[parameters('apiManagementServiceName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('sku')]",
+        "capacity": "[parameters('skuCount')]"
+      },
+      "properties": {
+        "publisherEmail": "[parameters('publisherEmail')]",
+        "publisherName": "[parameters('publisherName')]"
+      }
+    },
+    {
+      "name": "oauthProxyDeployment",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apiManagementServiceName'))]"
+      ],
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiManagementServiceName": {
+              "value": "[parameters('apiManagementServiceName')]"
+          },
+          "allowTokens": {
+              "value": "[parameters('allowTokens')]"
+          },
+          "cookieNamePrefix": {
+              "value": "[parameters('cookieNamePrefix')]"
+          },
+          "encryptionKey": {
+              "value": "[parameters('encryptionKey')]"
+          },
+          "trustedOrigin": {
+              "value": "[parameters('trustedOrigin')]"
+          },
+          "oauthProxyPolicy": {
+              "value": "[variables('oauthProxyPolicy')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "apiManagementServiceName": {
+              "type": "string"
+            },
+            "allowTokens": {
+              "type": "bool"
+            },
+            "cookieNamePrefix" : {
+              "type": "string"
+            },
+            "encryptionKey": {
+              "type": "securestring"
+            },
+            "trustedOrigin": {
+              "type": "string"
+            },
+            "oauthProxyPolicy" : {
+              "type": "string"
+            }
+          },
+          "variables": {},
+          "resources": [
+            {
+              "type": "Microsoft.ApiManagement/service/namedValues",
+              "apiVersion": "2021-08-01",
+              "name": "[concat(parameters('apiManagementServiceName'), '/oauthProxyAllowTokens')]",
+              "properties": {
+                  "displayName": "OAuthProxy-AllowTokens",
+                  "value": "[parameters('allowTokens')]",
+                  "tags": [],
+                  "secret": false
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/namedValues",
+              "apiVersion": "2021-08-01",
+              "name": "[concat(parameters('apiManagementServiceName'), '/oauthProxyCookieNamePrefix')]",
+              "properties": {
+                  "displayName": "OAuthProxy-CookieNamePrefix",
+                  "value": "[parameters('cookieNamePrefix')]",
+                  "tags": [],
+                  "secret": false
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/namedValues",
+              "apiVersion": "2021-08-01",
+              "name": "[concat(parameters('apiManagementServiceName'), '/oauthProxyEncryptionKey')]",
+              "properties": {
+                  "displayName": "OAuthProxy-EncryptionKey",
+                  "value": "[parameters('encryptionKey')]",
+                  "tags": [],
+                  "secret": true
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/namedValues",
+              "apiVersion": "2021-08-01",
+              "name": "[concat(parameters('apiManagementServiceName'), '/oauthProxyTrustedOrigin')]",
+              "properties": {
+                  "displayName": "OAuthProxy-TrustedOrigin",
+                  "value": "[parameters('trustedOrigin')]",
+                  "tags": [],
+                  "secret": false
+              }
+            },
+             {
+              "type": "Microsoft.ApiManagement/service/policies",
+              "apiVersion": "2021-08-01",
+
+              "name": "[concat(parameters('apiManagementServiceName'), '/policy')]",
+              "dependsOn": [
+                  "[resourceId('Microsoft.ApiManagement/service/namedValues', parameters('apiManagementServiceName'), 'oauthProxyAllowTokens')]",
+                  "[resourceId('Microsoft.ApiManagement/service/namedValues', parameters('apiManagementServiceName'), 'oauthProxyCookieNamePrefix')]",
+                  "[resourceId('Microsoft.ApiManagement/service/namedValues', parameters('apiManagementServiceName'), 'oauthProxyEncryptionKey')]",
+                  "[resourceId('Microsoft.ApiManagement/service/namedValues', parameters('apiManagementServiceName'), 'oauthProxyTrustedOrigin')]"
+              ],
+              "properties": {
+                  "value": "[parameters('oauthProxyPolicy')]",
+                  "format": "xml"
+              }
+            }
+          ],
+          "outputs": {
+            "oauthProxyPolicy": {
+              "type": "string",
+              "value": "[parameters('oauthProxyPolicy')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "oauthProxyWithPhantomTokenDeployment",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2021-04-01",
+      "condition": "[parameters('usePhantomToken')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'oauthProxyDeployment')]"
+      ],
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apiManagementServiceName": {
+              "value": "[parameters('apiManagementServiceName')]"
+          },
+          "usePhantomToken" : {
+            "value": true
+          },
+          "introspectionUrl" : {
+            "value": "[uri(parameters('introspectionUrl'),'')]"
+          },
+          "clientId": {
+              "value": "[parameters('clientId')]"
+          },
+          "clientSecret": {
+              "value": "[parameters('clientSecret')]"
+          },
+          "oauthProxyPhantomTokenPolicy": {
+            "value": "[variables('oauthProxyPhantomTokenPolicy')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "apiManagementServiceName" : {
+              "type": "string"
+            },
+            "usePhantomToken": {
+              "type": "bool"
+            },
+            "introspectionUrl": {
+              "type": "string"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "clientSecret": {
+              "type": "securestring"
+            },
+            "oauthProxyPhantomTokenPolicy": {
+              "type": "string"
+            }
+          },
+          "variables": {
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ApiManagement/service/namedValues",
+              "apiVersion": "2021-08-01",
+              "name": "[concat(parameters('apiManagementServiceName'), '/oauthProxyUsePhantomToken')]",
+              "properties": {
+                  "displayName": "OAuthProxy-UsePhantomToken",
+                  "value": "[parameters('usePhantomToken')]",
+                  "tags": [],
+                  "secret": false
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/namedValues",
+              "apiVersion": "2021-08-01",
+              "condition": "[parameters('usePhantomToken')]",
+              "name": "[concat(parameters('apiManagementServiceName'), '/oauthProxyIntrospectionUrl')]",
+              "properties": {
+                  "displayName": "OAuthProxy-IntrospectionUrl",
+                  "value": "[parameters('introspectionUrl')]",
+                  "tags": [],
+                  "secret": false
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/namedValues",
+              "apiVersion": "2021-08-01",
+              "condition": "[parameters('usePhantomToken')]",
+              "name": "[concat(parameters('apiManagementServiceName'), '/oauthProxyClientId')]",
+              "properties": {
+                  "displayName": "OAuthProxy-ClientId",
+                  "value": "[parameters('clientId')]",
+                  "tags": [],
+                  "secret": false
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/namedValues",
+              "apiVersion": "2021-08-01",
+              "condition": "[parameters('usePhantomToken')]",
+              "name": "[concat(parameters('apiManagementServiceName'), '/oauthProxyClientSecret')]",
+              "properties": {
+                  "displayName": "OAuthProxy-ClientSecret",
+                  "value": "[parameters('clientSecret')]",
+                  "tags": [],
+                  "secret": true
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/policies",
+              "apiVersion": "2021-08-01",
+              "name": "[concat(parameters('apiManagementServiceName'), '/policy')]",
+              "dependsOn": [
+                  "[resourceId('Microsoft.ApiManagement/service/namedValues', parameters('apiManagementServiceName'), 'oauthProxyUsePhantomToken')]",
+                  "[resourceId('Microsoft.ApiManagement/service/namedValues',parameters('apiManagementServiceName'), 'oauthProxyIntrospectionUrl')]",
+                  "[resourceId('Microsoft.ApiManagement/service/namedValues',parameters('apiManagementServiceName'), 'oauthProxyClientId')]",
+                  "[resourceId('Microsoft.ApiManagement/service/namedValues',parameters('apiManagementServiceName'), 'oauthProxyClientSecret')]"
+              ],
+              "properties": {
+                  "value": "[parameters('oauthProxyPhantomTokenPolicy')]",
+                  "format": "xml"
+              }
+          }
+          ],
+          "outputs": {
+            "oauthProxyPolicy": {
+              "type": "string",
+              "value": "[parameters('oauthProxyPhantomTokenPolicy')]"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

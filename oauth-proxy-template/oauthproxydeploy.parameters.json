@@ -1,0 +1,39 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "apiManagementServiceName": {
+            "value": "oauthProxyApim"
+        },
+        "publisherEmail": {
+            "value": "developer@example.com"
+        },
+        "publisherName": {
+            "value": "Dave Loper"
+        },
+        "allowTokens": {
+            "value": true
+        },
+        "trustedOrigin": {
+            "value": "https://app.example.com"
+        },
+        "cookieNamePrefix": {
+            "value": "oauth-proxy"
+        },
+        "encryptionKey": {
+            "value": "hydDIo7hOnUXnAzR3Y00y8r6SvfQG8PToNx9yALkKrhAozdBHAw6w4aLSlWowO5IHR9Q0k6BISHVDWcqwZvL7Q=="
+        },
+        "usePhantomToken": {
+            "value": true
+        },
+        "introspectionUrl": {
+          "value": "https://idsvr.example.com"
+        },
+        "clientId": {
+          "value": "test-client"
+        },
+        "clientSecret": {
+          "value": "Secr3t!"
+        }
+    }
+}
