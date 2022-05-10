@@ -52,7 +52,7 @@ Identify the URLs of the OAuth Agent, the OAuth Proxy and client application. OA
 ### Create Resources
 The provided template describes an instance of the Azure API Management Service with a global API policy that implements the OAuth Proxy. For demonstration, the policy shows how to combine the OAuth Proxy with the Phantom Token pattern.
 
-Use the Azure cli to deploy the template. Specify the name of the resource group that the APIM service should be created in. Provide the parameters for configuring the OAuth Proxy. If the resource group already contains resources, make sure to run the deployment in incremental mode to add the service.
+Use the Azure cli to deploy the template. Specify the name of the resource group that the APIM service should be created in. Provide the parameters for configuring the OAuth Proxy. Choose a globally unique name for the service if you create a new one. If the resource group already contains resources, make sure to run the deployment in incremental mode to add the service.
 
 ```
 az deployment group create --resource-group <name-of-resource-group> --template-file oauth-proxy-template/oauthproxydeploy.json --parameters @oauth-proxy-template/oauthproxydeploy.parameters.json --mode incremental
@@ -65,6 +65,8 @@ az deployment group create --resource-group <name-of-resource-group> --template-
 ```
 
 The template contains inner templates for the policy. Copy, reuse and adapt those templates in other deployments, for example to add the policy to an existing APIM instance.
+
+Note that the commands above can take long time to finish, especially if the deployment results in a new instance of the APIM service.
 
 ## Testing
 
